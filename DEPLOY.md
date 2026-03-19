@@ -1,36 +1,31 @@
-# Vercel + GitHub (configured)
+# Vercel + GitHub
 
-## What’s already done (CLI)
+## Live
 
-- **Project:** `rjain12s-projects/smartfaq` on Vercel  
-- **Production URL:** [https://smartfaq.vercel.app](https://smartfaq.vercel.app)  
-- **GitHub:** [github.com/RJain12/smartfaq](https://github.com/RJain12/smartfaq) is **connected** — pushes to the production branch trigger deployments.  
-- **Root directory:** `smartfaq-web` (monorepo: Next.js app lives in that folder).
+**[https://smartfaq.vercel.app](https://smartfaq.vercel.app)** — deploys on every push to `main`.
 
-## Deploy from your machine (optional)
+## Environment variables (already on the project)
 
-Run **`vercel deploy --prod`** from the **repository root** (`smartfq/`), not from inside `smartfaq-web/`, so Vercel doesn’t double the path:
+| Variable | Source |
+|----------|--------|
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | **Upstash for Redis** Vercel integration (provisioned via CLI) |
+| `REDIS_URL`, `KV_URL`, `KV_REST_API_READ_ONLY_TOKEN` | Same integration (available if you need them) |
+| `ADMIN_SESSION_SECRET` | Set via Vercel API (random 256-bit hex) — signs admin cookies |
+| `SMARTFAQ_ADMIN_PASSWORD` | Set to `aditya` — **change this in** [Project → Settings → Environment Variables](https://vercel.com/rjain12s-projects/smartfaq/settings/environment-variables) for anything public-facing |
+
+The Next app reads **`KV_REST_API_URL`** + **`KV_REST_API_TOKEN`** (or legacy `UPSTASH_REDIS_*` if you set those manually).
+
+## Monorepo deploy
+
+From repo root (folder that contains `smartfaq-web/`):
 
 ```bash
-cd /path/to/smartfq   # root that contains smartfaq-web/
 npx vercel deploy --prod --yes
 ```
 
-Local link metadata lives in `/.vercel/` (gitignored).
+Do not run production deploy only from inside `smartfaq-web/` when **Root Directory** is `smartfaq-web` (path gets doubled).
 
-## Environment variables (production)
+## Local dev
 
-In [Vercel → Project → Settings → Environment Variables](https://vercel.com/rjain12s-projects/smartfaq/settings/environment-variables), add:
-
-| Name | Purpose |
-|------|--------|
-| `UPSTASH_REDIS_REST_URL` | Persist responses on serverless |
-| `UPSTASH_REDIS_REST_TOKEN` | Upstash token |
-| `SMARTFAQ_ADMIN_PASSWORD` | Strong admin password |
-| `ADMIN_SESSION_SECRET` | Long random string for admin cookie |
-
-Without Upstash, **submits won’t persist** in production (read-only filesystem).
-
-## Security
-
-If any automation or log ever exposed a Vercel token, rotate it under **Vercel → Account → Tokens**.
+- **`vercel env pull`** from the linked project downloads envs into `.env.local` (gitignored).
+- Or use **`.data/`** JSONL only: leave `KV_*` unset and the app uses the filesystem.

@@ -3,6 +3,7 @@
 
 # Vercel (local link — do not commit)
 /.vercel/
+/.env.local
 
 # Next.js app (smartfaq-web)
 smartfaq-web/node_modules/
@@ -22,3 +23,4 @@ smartfaq_survey/secrets/
 smartfaq_survey/.Rhistory
 smartfaq_survey/.RData
 smartfaq_survey/.Rproj.user
+.env*.local

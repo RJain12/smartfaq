@@ -7,10 +7,18 @@ import {
   readAllResponses,
 } from "./file-store";
 
+/** Vercel Upstash integration uses KV_REST_*; standalone Upstash uses UPSTASH_REDIS_*. */
+function upstashRest() {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || "";
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || "";
+  return { url, token };
+}
+
 function useUpstash() {
-  return Boolean(
-    process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-  );
+  const { url, token } = upstashRest();
+  return Boolean(url && token);
 }
 
 export async function appendEvent(e: ClientEvent) {
