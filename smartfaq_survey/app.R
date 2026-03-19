@@ -6,19 +6,9 @@ library(bslib)
 library(yaml)
 library(htmltools)
 library(commonmark)
-library(ggplot2)
-library(dplyr)
-library(tidyr)
-suppressPackageStartupMessages({
-  library(redux)
-  library(jsonlite)
-  library(digest)
-})
 
 source("R/01_load_config.R", local = TRUE)
 source("R/02_survey_copy.R", local = TRUE)
-source("R/03_redis.R", local = TRUE)
-source("R/04_analytics.R", local = TRUE)
 
 cfg <- load_study_config()
 notes_db <- load_notes()
@@ -29,20 +19,30 @@ if (is.null(cfg$forms) || length(cfg$forms) == 0L) {
 
 default_form <- as.character(cfg$default_form %||% names(cfg$forms)[1])
 
-rcfg <- cfg$redis %||% list()
-redis_url <- Sys.getenv("REDIS_URL", unset = as.character(rcfg$url %||% "redis://127.0.0.1:6379"))
-if (!nzchar(redis_url)) redis_url <- "redis://127.0.0.1:6379"
-redis_prefix <- as.character(rcfg$prefix %||% "smartfaq")
-geo_lookup_enabled <- if (is.null(rcfg$geolookup)) TRUE else isTRUE(rcfg$geolookup)
-
-r_con <- redis_connect(redis_url)
-
-admin_password <- Sys.getenv("SMARTFAQ_ADMIN_PASSWORD", unset = "aditya")
+google_sheet_id <- as.character(cfg$google_sheet_id %||% "")
+if (!nzchar(google_sheet_id)) {
+  message("NOTE: google_sheet_id is empty in config.yml — submissions are not sent to Google Sheets (use CSV download for testing).")
+}
+# Path for gs4_auth on first sheet_append only (avoids startup/auth issues on hosted Shiny).
+gcp_sa_path <- ""
+if (nzchar(google_sheet_id)) {
+  suppressPackageStartupMessages(library(googlesheets4))
+  sa_json <- Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS", unset = "")
+  if (!nzchar(sa_json)) {
+    sj <- cfg$google_service_account_json
+    if (!is.null(sj) && nzchar(as.character(sj)) && file.exists(as.character(sj))) {
+      sa_json <- normalizePath(as.character(sj), winslash = "/", mustWork = TRUE)
+    }
+  }
+  if (nzchar(sa_json) && file.exists(sa_json)) {
+    gcp_sa_path <- sa_json
+  }
+}
 
 likert_1_10 <- function(input_id, label, left, right) {
   sliderInput(
     inputId = input_id,
-    label = tagList(label, tags$span(class = "text-muted small", " (1–10)")),
+    label = label,
     min = 1L,
     max = 10L,
     value = 5L,
@@ -53,18 +53,13 @@ likert_1_10 <- function(input_id, label, left, right) {
   )
 }
 
-client_info_js <- HTML(
-  "document.addEventListener('shiny:connected', function() {",
-  "  var tz = (Intl.DateTimeFormat && Intl.DateTimeFormat().resolvedOptions().timeZone) || '';",
-  "  Shiny.setInputValue('client_info', {",
-  "    userAgent: navigator.userAgent || '',",
-  "    language: navigator.language || '',",
-  "    platform: navigator.platform || '',",
-  "    screen: [window.screen.width, window.screen.height],",
-  "    tz: tz",
-  "  }, {priority: 'event'});",
-  "});"
-)
+req_star <- function() tags$span(class = "text-danger", " *")
+
+#' Hospital course items (Google Forms style — no “On a scale” prefix).
+lik_lab_hc <- function(q) tagList(q, req_star())
+
+#' Discharge summary & SmartFAQs items (Forms use “On a scale of 1-10, …”).
+lik_lab_scaled <- function(q) tagList("On a scale of 1–10, ", q, req_star())
 
 survey_panel <- sidebarLayout(
   sidebarPanel(
@@ -97,6 +92,12 @@ survey_panel <- sidebarLayout(
       style = "font-weight:600;"
     ),
     br(), br(),
+    actionButton(
+      "btn_reset_note",
+      label = "Reset this note",
+      class = "btn btn-outline-secondary w-100"
+    ),
+    br(), br(),
     uiOutput("submit_feedback"),
     br(),
     conditionalPanel(
@@ -111,28 +112,13 @@ survey_panel <- sidebarLayout(
   )
 )
 
-admin_panel <- tagList(
-  fluidRow(
-    column(
-      12,
-      uiOutput("admin_gate"),
-      uiOutput("admin_dashboard")
-    )
-  )
-)
-
 ui <- fluidPage(
   theme = bs_theme(version = 5, bootswatch = "flatly", primary = "#17a2b8"),
   tags$head(
-    tags$link(rel = "stylesheet", type = "text/css", href = "custom.css"),
-    tags$script(client_info_js)
+    tags$link(rel = "stylesheet", type = "text/css", href = "custom.css")
   ),
   div(class = "app-header", h4("SmartFAQs Survey — Patient Perspective")),
-  tabsetPanel(
-    id = "main_tabs",
-    tabPanel("Survey", survey_panel),
-    tabPanel("Admin", admin_panel)
-  )
+  survey_panel
 )
 
 server <- function(input, output, session) {
@@ -164,133 +150,8 @@ server <- function(input, output, session) {
     active_note = NULL,
     completed_notes = character(),
     pending_rows = list(),
-    syncing_note = FALSE,
-    client_logged = FALSE,
-    admin_ok = FALSE,
-    admin_refresh = 0L
+    syncing_note = FALSE
   )
-
-  log_ev <- function(obj) {
-    obj$session_id <- session_id
-    obj$form_id <- isolate(form_id())
-    obj$ts_utc <- format(Sys.time(), tz = "UTC", usetz = TRUE)
-    redis_log_event(r_con, redis_prefix, obj)
-  }
-
-  observeEvent(input$client_info, {
-    req(!isTRUE(rv$client_logged))
-    rv$client_logged <- TRUE
-    ci <- parse_client_info(input$client_info)
-    ip <- get_shiny_client_ip(session)
-    geo <- list(country = NA_character_, region = NA_character_, city = NA_character_)
-    if (isTRUE(geo_lookup_enabled)) {
-      geo <- geoip_lookup(ip)
-    }
-    dev <- classify_device(ci$user_agent)
-    meta <- list(
-      session_id = session_id,
-      form_id = isolate(form_id()),
-      user_agent = ci$user_agent,
-      language = ci$language,
-      platform = ci$platform,
-      screen_w = ci$screen_w,
-      screen_h = ci$screen_h,
-      timezone = ci$timezone,
-      ip = ip,
-      country = geo$country,
-      region = geo$region,
-      city = geo$city,
-      device_class = dev
-    )
-    redis_register_session(r_con, redis_prefix, session_id, meta)
-    redis_funnel_reach(r_con, redis_prefix, session_id, "connected")
-    redis_agg_once(r_con, redis_prefix, session_id, "device", dev)
-    if (nzchar(geo$country %||% "")) {
-      redis_agg_once(r_con, redis_prefix, session_id, "country", as.character(geo$country))
-    }
-    if (nzchar(ci$timezone %||% "")) {
-      redis_agg_once(r_con, redis_prefix, session_id, "timezone", as.character(ci$timezone))
-    }
-    log_ev(list(type = "session_start", device = dev, country = geo$country))
-  }, ignoreNULL = TRUE, ignoreInit = TRUE)
-
-  observe({
-    shiny::req(rv$section %in% 0L:2L)
-    step <- switch(as.character(rv$section),
-      "0" = "intro",
-      "1" = "demographics",
-      "2" = "evaluation",
-      "intro"
-    )
-    redis_funnel_reach(r_con, redis_prefix, session_id, step)
-    log_ev(list(type = "section_view", section = rv$section, step = step))
-  })
-
-  observeEvent(input$note_tabs, {
-    req(rv$section == 2L)
-    tab <- input$note_tabs
-    nid <- isolate(current_note())
-    if (is.null(tab) || is.null(nid)) return(invisible(NULL))
-    log_ev(list(type = "note_tab", tab = tab, note_id = nid))
-    if (identical(tab, "hc")) redis_funnel_reach(r_con, redis_prefix, session_id, "tab_hospital")
-    if (identical(tab, "dc")) redis_funnel_reach(r_con, redis_prefix, session_id, "tab_discharge")
-    if (identical(tab, "faq")) redis_funnel_reach(r_con, redis_prefix, session_id, "tab_faq")
-  }, ignoreNULL = TRUE, ignoreInit = TRUE)
-
-  observeEvent(input$participant_email, {
-    req(nzchar(input$participant_email %||% ""))
-    redis_question_first(r_con, redis_prefix, session_id, "demo:participant_email")
-  }, ignoreNULL = TRUE, ignoreInit = TRUE)
-
-  observeEvent(input$participant_name, {
-    req(nzchar(trimws(input$participant_name %||% "")))
-    redis_question_first(r_con, redis_prefix, session_id, "demo:participant_name")
-  }, ignoreNULL = TRUE, ignoreInit = TRUE)
-
-  observeEvent(input$consent_acknowledgments_listed, {
-    redis_question_first(r_con, redis_prefix, session_id, "demo:consent_acknowledgments_listed")
-  }, ignoreNULL = TRUE, ignoreInit = TRUE)
-
-  for (nm in c(
-    "demo_age", "demo_race", "demo_race_other", "demo_hispanic", "demo_education",
-    "demo_healthcare_bg", "demo_recent_discharge", "demo_confident_forms",
-    "demo_digital_comfort", "demo_caregiver", "demo_acknowledge_publication"
-  )) {
-    local({
-      nmx <- nm
-      observeEvent(input[[nmx]], {
-        v <- input[[nmx]]
-        if (is.null(v)) return(invisible(NULL))
-        if (is.character(v) && !nzchar(paste(v, collapse = ""))) return(invisible(NULL))
-        redis_question_first(r_con, redis_prefix, session_id, paste0("demo:", nmx))
-      }, ignoreNULL = TRUE, ignoreInit = TRUE)
-    })
-  }
-
-  for (nm in c(
-    "hc_understand", "hc_comfort", "hc_clarity", "hc_when_help",
-    "dc_understand", "dc_comfort", "dc_clarity", "dc_when_help",
-    "faq_understand", "faq_comfort", "faq_clarity", "faq_when_help", "faq_unanswered"
-  )) {
-    local({
-      nmx <- nm
-      observeEvent(input[[nmx]], {
-        req(rv$section == 2L)
-        nid <- isolate(current_note())
-        if (is.null(nid)) return(invisible(NULL))
-        v <- input[[nmx]]
-        if (is.null(v)) return(invisible(NULL))
-        if (nmx != "faq_unanswered" && (length(v) == 0L || any(is.na(v)))) {
-          return(invisible(NULL))
-        }
-        if (nmx == "faq_unanswered" && (length(v) == 0L || !nzchar(as.character(v)))) {
-          return(invisible(NULL))
-        }
-        qk <- paste0(nid, ":", nmx)
-        redis_question_first(r_con, redis_prefix, session_id, qk)
-      }, ignoreNULL = TRUE, ignoreInit = TRUE)
-    })
-  }
 
   observe({
     ids <- note_ids()
@@ -338,7 +199,8 @@ server <- function(input, output, session) {
   push_inputs_to_cache <- function(note_id) {
     if (is.null(note_id) || !nzchar(note_id)) return(invisible(NULL))
     cur <- read_note_inputs()
-    prev <- rv$note_cache[[note_id]] %||% list()
+    # isolate: may run from session$onFlushed (Shiny ≥1.13 forbids bare rv$ reads there)
+    prev <- isolate(rv$note_cache[[note_id]]) %||% list()
     for (nm in names(cur)) {
       if (!is.null(cur[[nm]])) prev[[nm]] <- cur[[nm]]
     }
@@ -348,33 +210,60 @@ server <- function(input, output, session) {
 
   apply_cache_to_inputs <- function(note_id) {
     if (is.null(note_id)) return(invisible(NULL))
-    c <- rv$note_cache[[note_id]] %||% list()
+    c <- isolate(rv$note_cache[[note_id]]) %||% list()
     for (nm in note_field_ids()) {
       val <- c[[nm]]
-      if (nm == "faq_unanswered") {
-        if (!is.null(val) && !is.na(val)) {
-          updateRadioButtons(session, nm, selected = val)
-        }
-      } else {
-        if (!is.null(val) && is.numeric(val)) {
-          updateSliderInput(session, nm, value = as.integer(val))
-        }
-      }
+      tryCatch(
+        {
+          if (nm == "faq_unanswered") {
+            if (!is.null(val) && !is.na(val)) {
+              updateRadioButtons(session, nm, selected = val)
+            }
+          } else {
+            if (!is.null(val) && is.numeric(val)) {
+              updateSliderInput(session, nm, value = as.integer(val))
+            }
+          }
+        },
+        error = function(e) invisible(NULL)
+      )
     }
     invisible(NULL)
+  }
+
+  # Do not use req() here — safe for renderUI when sidebar/main flush order varies.
+  resolve_note_id <- function(ids) {
+    if (length(ids) == 0L) return(NULL)
+    id <- input$note_select
+    if (is.null(id) || length(id) == 0L || !nzchar(as.character(id[[1L]]))) {
+      id <- rv$active_note
+    } else {
+      id <- as.character(id[[1L]])
+    }
+    if (is.null(id) || !nzchar(as.character(id))) {
+      id <- ids[[1L]]
+    }
+    as.character(id)[[1L]]
   }
 
   observeEvent(input$note_select, ignoreInit = FALSE, {
     req(rv$section == 2L)
     if (isTRUE(rv$syncing_note)) return(invisible(NULL))
     new_id <- input$note_select
+    if (is.null(new_id) || length(new_id) == 0L || !nzchar(as.character(new_id[[1L]]))) {
+      return(invisible(NULL))
+    }
+    new_id <- as.character(new_id)[[1L]]
     old_id <- rv$active_note
     if (!is.null(old_id) && !identical(old_id, new_id)) {
       push_inputs_to_cache(old_id)
     }
     rv$active_note <- new_id
     session$onFlushed(function() {
-      apply_cache_to_inputs(isolate(input$note_select))
+      nid <- isolate(input$note_select)
+      if (!is.null(nid) && length(nid) > 0L && nzchar(as.character(nid[[1L]]))) {
+        apply_cache_to_inputs(as.character(nid)[[1L]])
+      }
     }, once = TRUE)
   })
 
@@ -383,7 +272,10 @@ server <- function(input, output, session) {
       ids <- note_ids()
       if (length(ids) == 0L) return(NULL)
       first <- ids[[1L]]
-      if (is.null(rv$active_note)) rv$active_note <- first
+      if (is.null(rv$active_note) || !nzchar(as.character(rv$active_note)) ||
+        !rv$active_note %in% ids) {
+        rv$active_note <- first
+      }
       rv$syncing_note <- TRUE
       updateSelectInput(session, "note_select", choices = ids, selected = rv$active_note)
       rv$syncing_note <- FALSE
@@ -400,8 +292,10 @@ server <- function(input, output, session) {
     }
     if (sec == 1L) {
       return(tagList(
-        h5("Your information"),
-        textInput("participant_email", "Email address", placeholder = "you@example.com"),
+        h5("Demographics"),
+        p(class = "small text-muted", demo_intro),
+        h5(class = "mt-3", "Your information"),
+        textInput("participant_email", label = tagList("Email", req_star()), placeholder = "you@example.com"),
         textInput("participant_name", "Name (optional)", placeholder = "Optional"),
         checkboxInput(
           "consent_acknowledgments_listed",
@@ -409,8 +303,6 @@ server <- function(input, output, session) {
           value = FALSE
         ),
         hr(),
-        h5("Demographics"),
-        p(class = "small text-muted", demo_intro),
         radioButtons(
           "demo_age",
           label = tagList("How old are you?", tags$span(class = "text-danger", "*")),
@@ -527,124 +419,125 @@ server <- function(input, output, session) {
       done <- length(intersect(rv$completed_notes, ids))
       pct <- if (n > 0L) round(100 * done / n) else 0L
       return(tagList(
-        selectInput("note_select", "Select note", choices = ids, selected = rv$active_note %||% ids[[1L]]),
-        div(
-          class = "progress-label",
-          sprintf("Progress: %d / %d notes (%d%%)", done, n, pct)
-        ),
-        tags$div(
-          class = "progress mb-3",
-          tags$div(
-            class = "progress-bar",
-            role = "progressbar",
-            style = sprintf("width: %d%%;", pct),
-            `aria-valuenow` = pct,
-            `aria-valuemin` = 0,
-            `aria-valuemax` = 100
-          )
-        ),
         tags$div(
           class = "survey-q-groups",
-          h5(class = "text-primary", "Hospital course"),
+          selectInput(
+            "note_select",
+            "Select note",
+            choices = ids,
+            selected = rv$active_note %||% ids[[1L]],
+            selectize = FALSE
+          ),
+          div(
+            class = "progress-label",
+            sprintf("Progress: %d / %d notes (%d%%)", done, n, pct)
+          ),
+          tags$div(
+            class = "progress mb-3",
+            tags$div(
+              class = "progress-bar",
+              role = "progressbar",
+              style = sprintf("width: %d%%;", pct),
+              `aria-valuenow` = pct,
+              `aria-valuemin` = 0,
+              `aria-valuemax` = 100
+            )
+          ),
+          p(
+            class = "small text-muted mb-3",
+            "Use the tabs on the right to read the hospital course, discharge summary, and SmartFAQs while you answer here."
+          ),
+          p(
+            class = "small text-muted mb-3",
+            if (nzchar(google_sheet_id)) {
+              "Each submission appends one row to your Google Sheet (one note completed)."
+            } else {
+              "Set google_sheet_id in config.yml (and service account auth) to save responses to Google Sheets; otherwise use the session CSV download."
+            }
+          ),
+          tags$h4(class = "survey-section-title", "Hospital course"),
           likert_1_10(
             "hc_understand",
-            tagList("How understandable was this hospital course?", tags$span(class = "text-danger", "*")),
+            lik_lab_hc("How understandable was this hospital course?"),
             "Did not understand at all",
             "Completely understand"
           ),
           likert_1_10(
             "hc_comfort",
-            tagList(
-              "How comfortable would you be in managing your own care based on this hospital course?",
-              tags$span(class = "text-danger", "*")
-            ),
+            lik_lab_hc("How comfortable would you be in managing your own care based on this hospital course?"),
             "Completely uncomfortable",
             "Completely comfortable"
           ),
           likert_1_10(
             "hc_clarity",
-            tagList("How much clarity did you get on next steps of care?", tags$span(class = "text-danger", "*")),
+            lik_lab_hc("How much clarity did you get on next steps of care?"),
             "Not clear at all",
             "Very clear"
           ),
           likert_1_10(
             "hc_when_help",
-            tagList(
-              "How much do you understand of when to seek additional help if your health gets worse?",
-              tags$span(class = "text-danger", "*")
-            ),
+            lik_lab_hc("How much do you understand of when to seek additional help in case your health gets worse?"),
             "Did not understand at all",
             "Completely understand"
           ),
           hr(),
-          h5(class = "text-primary", "Discharge summary"),
+          tags$h4(class = "survey-section-title", "Discharge summary"),
           likert_1_10(
             "dc_understand",
-            tagList("How understandable was this discharge summary?", tags$span(class = "text-danger", "*")),
+            lik_lab_scaled("How understandable was this discharge summary?"),
             "Did not understand at all",
             "Completely understand"
           ),
           likert_1_10(
             "dc_comfort",
-            tagList(
-              "How comfortable would you be in managing your own care based on this discharge summary?",
-              tags$span(class = "text-danger", "*")
-            ),
+            lik_lab_scaled("How comfortable would you be in managing your own care based on this discharge summary?"),
             "Completely uncomfortable",
             "Completely comfortable"
           ),
           likert_1_10(
             "dc_clarity",
-            tagList("How much clarity did you get on next steps of care?", tags$span(class = "text-danger", "*")),
+            lik_lab_scaled("How much clarity did you get on next steps of care?"),
             "Not clear at all",
             "Very clear"
           ),
           likert_1_10(
             "dc_when_help",
-            tagList(
-              "How much do you understand of when to seek additional help if your health gets worse?",
-              tags$span(class = "text-danger", "*")
-            ),
+            lik_lab_scaled("How much do you understand of when to seek additional help in case your health gets worse?"),
             "Did not understand at all",
             "Completely understand"
           ),
           hr(),
-          h5(class = "text-primary", "SmartFAQs"),
+          tags$h4(class = "survey-section-title", "SmartFAQs"),
           likert_1_10(
             "faq_understand",
-            tagList("How understandable were these frequently asked questions?", tags$span(class = "text-danger", "*")),
+            lik_lab_scaled("How understandable were these frequently asked questions?"),
             "Did not understand at all",
             "Completely understand"
           ),
           likert_1_10(
             "faq_comfort",
-            tagList(
-              "How comfortable would you be in managing your own care based on these frequently asked questions?",
-              tags$span(class = "text-danger", "*")
-            ),
+            lik_lab_scaled("How comfortable would you be in managing your own care based on these frequently asked questions?"),
             "Completely uncomfortable",
             "Completely comfortable"
           ),
           likert_1_10(
             "faq_clarity",
-            tagList("How much clarity did you get on next steps of care?", tags$span(class = "text-danger", "*")),
+            lik_lab_scaled("How much clarity did you get on next steps of care?"),
             "Not clear at all",
             "Very clear"
           ),
           likert_1_10(
             "faq_when_help",
-            tagList(
-              "How much do you understand of when to seek additional help if your health gets worse?",
-              tags$span(class = "text-danger", "*")
-            ),
+            lik_lab_scaled("How much do you understand of when to seek additional help in case your health gets worse?"),
             "Did not understand at all",
             "Completely understand"
           ),
+          hr(),
           radioButtons(
             "faq_unanswered",
             label = tagList(
               "Are you left with any unanswered questions that require further clarification from your doctor?",
-              tags$span(class = "text-danger", "*")
+              req_star()
             ),
             choices = c("Yes", "No"),
             selected = character(0)
@@ -656,10 +549,9 @@ server <- function(input, output, session) {
   })
 
   current_note <- reactive({
-    req(rv$section == 2L)
-    id <- input$note_select
-    if (is.null(id) || !nzchar(id)) id <- rv$active_note
-    id
+    if (rv$section != 2L) return(NULL)
+    ids <- note_ids()
+    resolve_note_id(ids)
   })
 
   output$main_body <- renderUI({
@@ -678,17 +570,23 @@ server <- function(input, output, session) {
         card(
           card_header("Instructions"),
           card_body(
-            p("Please complete the demographic questions in the left panel."),
+            p("Complete the demographic questions in the left panel, including your email."),
             p(
               class = "small text-muted",
-              "Fields marked with * are required before you can move on to rating the notes."
+              "Next, you will rate each assigned note: questions stay on the left while you read the hospital course, discharge summary, and SmartFAQs on the right (tabs)."
             )
           )
         )
       ))
     }
     if (sec == 2L) {
-      nid <- current_note()
+      if (length(ids) == 0L) {
+        return(tagList(
+          card(card_body(p("No notes are configured for this form in config.yml.")))
+        ))
+      }
+      nid <- resolve_note_id(ids)
+      if (is.null(nid) || !nzchar(as.character(nid))) nid <- ids[[1L]]
       note <- notes_db[[nid]] %||% list(
         hospital_course = "(Missing content for this note id in data/notes.yaml)",
         discharge_summary = "",
@@ -711,18 +609,7 @@ server <- function(input, output, session) {
         ))
       }
       return(tagList(
-        card(
-          card_body(
-            layout_columns(
-              col_widths = c(12),
-              tags$div(
-                class = "d-flex align-items-center gap-2 mb-2",
-                tags$span("\U0001F4C4", `aria-hidden` = "true"),
-                tags$strong("Current note ", nid)
-              )
-            )
-          )
-        ),
+        tags$h3(class = "mb-3", "Current note"),
         tabsetPanel(
           id = "note_tabs",
           type = "pills",
@@ -766,7 +653,7 @@ server <- function(input, output, session) {
       errs <- c(errs, "Email address is required.")
     }
     req_demo <- c(
-      "demo_age", "demo_race", "demo_hispanic", "demo_healthcare_bg",
+      "demo_age", "demo_race", "demo_hispanic", "demo_education", "demo_healthcare_bg",
       "demo_recent_discharge", "demo_confident_forms", "demo_digital_comfort",
       "demo_caregiver", "demo_acknowledge_publication"
     )
@@ -806,7 +693,7 @@ server <- function(input, output, session) {
 
   build_row <- function(note_id) {
     push_inputs_to_cache(note_id)
-    c <- rv$note_cache[[note_id]] %||% list()
+    c <- isolate(rv$note_cache[[note_id]]) %||% list()
     as.data.frame(
       list(
         session_id = session_id,
@@ -849,14 +736,29 @@ server <- function(input, output, session) {
     )
   }
 
-  persist_response <- function(row_df) {
-    lst <- as.list(row_df[1, , drop = FALSE])
-    ok <- redis_save_response(r_con, redis_prefix, lst)
-    if (!isTRUE(ok)) {
-      message("Redis unavailable; response not stored remotely:\n", paste(capture.output(print(row_df)), collapse = "\n"))
-      return(FALSE)
+  gs4_auth_done <- FALSE
+  append_google_sheet <- function(row_df) {
+    if (!nzchar(google_sheet_id)) return(FALSE)
+    if (!requireNamespace("googlesheets4", quietly = TRUE)) return(FALSE)
+    if (!isTRUE(gs4_auth_done) && nzchar(gcp_sa_path) && file.exists(gcp_sa_path)) {
+      try(googlesheets4::gs4_auth(path = gcp_sa_path), silent = TRUE)
+      gs4_auth_done <<- TRUE
     }
-    TRUE
+    tryCatch(
+      {
+        googlesheets4::sheet_append(ss = google_sheet_id, data = row_df)
+        TRUE
+      },
+      error = function(e) {
+        message("Google Sheet append failed: ", conditionMessage(e))
+        FALSE
+      }
+    )
+  }
+
+  persist_response <- function(row_df) {
+    ok_sheet <- isTRUE(append_google_sheet(row_df))
+    list(sheet = ok_sheet)
   }
 
   observeEvent(input$btn_submit_note, {
@@ -871,11 +773,6 @@ server <- function(input, output, session) {
     e2 <- validate_note()
     errs <- c(e1, e2)
     if (length(errs) > 0L) {
-      log_ev(list(
-        type = "submit_validation_fail",
-        note_id = isolate(current_note()),
-        n_errors = length(errs)
-      ))
       output$submit_feedback <- renderUI(
         div(
           class = "text-danger small",
@@ -888,28 +785,54 @@ server <- function(input, output, session) {
     nid <- current_note()
     if (is.null(nid)) return(invisible(NULL))
     row_df <- build_row(nid)
-    rv$pending_rows[[length(rv$pending_rows) + 1L]] <- row_df
-    ok <- persist_response(row_df)
-    log_ev(list(type = "submit_success", note_id = nid))
-    redis_funnel_reach(r_con, redis_prefix, session_id, "first_submit")
-    if (!is.null(r_con)) {
-      r_con$HINCRBY(rk(redis_prefix, "stats", "submissions_by_note"), nid, 1L)
-    }
-    if (!isTRUE(ok)) {
+    persist <- persist_response(row_df)
+    have_sheet <- nzchar(google_sheet_id)
+    saved_ok <- !have_sheet || isTRUE(persist$sheet)
+    if (saved_ok) {
+      rv$pending_rows[[length(rv$pending_rows) + 1L]] <- row_df
+      if (!nid %in% rv$completed_notes) {
+        rv$completed_notes <- c(rv$completed_notes, nid)
+      }
+      msg <- if (have_sheet) {
+        "Submitted successfully. Your response was added to the study Google Sheet. Thank you."
+      } else {
+        "Submitted successfully (saved for this browser session only — enable Google Sheets in config.yml for cloud storage). Thank you."
+      }
+      output$submit_feedback <- renderUI(div(class = "text-success small", msg))
+    } else {
+      rv$pending_rows[[length(rv$pending_rows) + 1L]] <- row_df
       output$submit_feedback <- renderUI(
         div(
-          class = "text-warning small",
-          "Could not reach Redis; response kept in this session only. Use CSV download or fix REDIS_URL."
+          class = "text-danger small",
+          "Google Sheet append failed. Check sharing with the service account and GOOGLE_APPLICATION_CREDENTIALS. Use CSV download to keep this attempt, fix the sheet, then submit again to mark the note complete."
         )
       )
-    } else {
-      output$submit_feedback <- renderUI(
-        div(class = "text-success small", "Submitted successfully. Thank you.")
-      )
     }
-    if (!nid %in% rv$completed_notes) {
-      rv$completed_notes <- c(rv$completed_notes, nid)
-    }
+  })
+
+  observeEvent(input$btn_reset_note, {
+    output$submit_feedback <- renderUI(NULL)
+    if (rv$section != 2L) return(invisible(NULL))
+    nid <- isolate(current_note())
+    if (is.null(nid)) return(invisible(NULL))
+    rv$note_cache[[nid]] <- list(
+      hc_understand = 5L,
+      hc_comfort = 5L,
+      hc_clarity = 5L,
+      hc_when_help = 5L,
+      dc_understand = 5L,
+      dc_comfort = 5L,
+      dc_clarity = 5L,
+      dc_when_help = 5L,
+      faq_understand = 5L,
+      faq_comfort = 5L,
+      faq_clarity = 5L,
+      faq_when_help = 5L,
+      faq_unanswered = NA_character_
+    )
+    apply_cache_to_inputs(nid)
+    updateRadioButtons(session, "faq_unanswered", selected = character(0))
+    showNotification("Ratings for this note were reset.", type = "message")
   })
 
   observeEvent(input$btn_prev, {
@@ -930,6 +853,11 @@ server <- function(input, output, session) {
         showNotification(paste(errs, collapse = " "), type = "warning", duration = 8)
         return(invisible(NULL))
       }
+      ids1 <- isolate(note_ids())
+      if (length(ids1) > 0L &&
+        (is.null(rv$active_note) || !nzchar(as.character(rv$active_note)))) {
+        rv$active_note <- ids1[[1L]]
+      }
     }
     rv$section <- rv$section + 1L
   })
@@ -939,7 +867,7 @@ server <- function(input, output, session) {
       sprintf("smartfaq_survey_%s.csv", session_id)
     },
     content = function(file) {
-      rows <- rv$pending_rows
+      rows <- isolate(rv$pending_rows)
       if (length(rows) == 0L) {
         writeLines("No submissions in this session yet.", file)
         return(invisible(NULL))
@@ -949,272 +877,9 @@ server <- function(input, output, session) {
     }
   )
 
-  # --- Admin ---
-  output$admin_gate <- renderUI({
-    if (isTRUE(rv$admin_ok)) return(NULL)
-    card(
-      card_header("Administrator sign-in"),
-      card_body(
-        p(class = "small text-muted", "Analytics are server-side; do not expose this password in production."),
-        passwordInput("admin_pw", "Password", value = ""),
-        actionButton("admin_login", "Unlock dashboard", class = "btn btn-primary")
-      )
-    )
-  })
-
-  observeEvent(input$admin_login, {
-    if (identical(trimws(input$admin_pw %||% ""), admin_password)) {
-      rv$admin_ok <- TRUE
-      rv$admin_refresh <- rv$admin_refresh + 1L
-      showNotification("Admin dashboard unlocked.", type = "message")
-    } else {
-      showNotification("Incorrect password.", type = "error")
-    }
-  })
-
-  admin_snapshot <- reactive({
-    req(isTRUE(rv$admin_ok))
-    input$admin_refresh
-    rv$admin_refresh
-    summ <- redis_summary_counts(r_con, redis_prefix)
-    ev <- redis_read_events(r_con, redis_prefix, maxn = 8000L)
-    rs <- redis_read_responses(r_con, redis_prefix, maxn = 2000L)
-    df <- responses_to_df(rs)
-    submits_note <- redis_hgetall_chr(r_con, rk(redis_prefix, "stats", "submissions_by_note"))
-    list(summary = summ, events = ev, responses = df, submits_note = submits_note)
-  })
-
-  output$admin_dashboard <- renderUI({
-    if (!isTRUE(rv$admin_ok)) {
-      return(NULL)
-    }
-    tagList(
-      card(
-        card_body(
-          fluidRow(
-            column(4, actionButton("admin_refresh", "Refresh data", class = "btn btn-outline-secondary")),
-            column(8, p(class = "small text-muted mb-0", "Data reads from Redis at refresh. Large studies may take a moment."))
-          )
-        )
-      ),
-      layout_columns(
-        col_widths = c(6, 6),
-        card(card_header("Visitor funnel"), card_body(plotOutput("plot_funnel", height = "280px"))),
-        card(card_header("Device class"), card_body(plotOutput("plot_device", height = "280px")))
-      ),
-      layout_columns(
-        col_widths = c(6, 6),
-        card(card_header("Country (IP-based, coarse)"), card_body(plotOutput("plot_country", height = "280px"))),
-        card(card_header("Submissions by note"), card_body(plotOutput("plot_submits_note", height = "280px")))
-      ),
-      card(
-        card_header("First interaction: demographics (unique sessions)"),
-        card_body(
-          p(class = "small", "Compared to visitors who connected; later bars show cumulative drop-off if order is followed."),
-          plotOutput("plot_demo_dropoff", height = "320px")
-        )
-      ),
-      card(
-        card_header("Evaluation items: first interaction (top 30, per note × item)"),
-        card_body(
-          p(
-            class = "small text-muted",
-            "Counts unique sessions that adjusted each slider/radio at least once for that note."
-          ),
-          plotOutput("plot_eval_touch", height = "340px")
-        )
-      ),
-      card(
-        card_header("Likert means by note (1–10 scales)"),
-        card_body(plotOutput("plot_likert_means", height = "360px"))
-      ),
-      card(
-        card_header("Recent responses (latest 40 rows)"),
-        card_body(tableOutput("tbl_recent"))
-      )
-    )
-  })
-
-  output$plot_funnel <- renderPlot({
-    req(isTRUE(rv$admin_ok), cancelOutput = TRUE)
-    snap <- admin_snapshot()
-    f <- snap$summary$funnel
-    if (length(f) == 0L) {
-      plot.new()
-      text(0.5, 0.5, "No funnel data yet")
-      return(invisible(NULL))
-    }
-    ord <- c(
-      "connected", "intro", "demographics", "evaluation",
-      "tab_hospital", "tab_discharge", "tab_faq", "first_submit"
-    )
-    d <- hash_to_df(f, "n")
-    d <- d[d$key %in% ord, , drop = FALSE]
-    d$key <- factor(d$key, levels = ord[ord %in% d$key])
-    d <- d[order(d$key), , drop = FALSE]
-    ggplot(d, aes(x = key, y = value)) +
-      geom_col(fill = "#17a2b8") +
-      theme_minimal() +
-      theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
-      labs(x = NULL, y = "Unique sessions", title = "Engagement funnel")
-  })
-
-  output$plot_device <- renderPlot({
-    req(isTRUE(rv$admin_ok), cancelOutput = TRUE)
-    d <- hash_to_df(admin_snapshot()$summary$device, "n")
-    if (nrow(d) == 0L) {
-      plot.new()
-      text(0.5, 0.5, "No device data")
-      return(invisible(NULL))
-    }
-    ggplot(d, aes(x = reorder(key, value), y = value)) +
-      geom_col(fill = "#6c757d") +
-      coord_flip() +
-      theme_minimal() +
-      labs(x = NULL, y = "Sessions", title = "Device (UA heuristic)")
-  })
-
-  output$plot_country <- renderPlot({
-    req(isTRUE(rv$admin_ok), cancelOutput = TRUE)
-    d <- hash_to_df(admin_snapshot()$summary$country, "n")
-    if (nrow(d) == 0L) {
-      plot.new()
-      text(0.5, 0.5, "No geo data (local IP or lookup off)")
-      return(invisible(NULL))
-    }
-    d <- d[order(-d$value), , drop = FALSE][seq_len(min(15L, nrow(d))), , drop = FALSE]
-    ggplot(d, aes(x = reorder(key, value), y = value)) +
-      geom_col(fill = "#2c3e50") +
-      coord_flip() +
-      theme_minimal() +
-      labs(x = NULL, y = "Sessions", title = "Top countries")
-  })
-
-  output$plot_submits_note <- renderPlot({
-    req(isTRUE(rv$admin_ok), cancelOutput = TRUE)
-    d <- hash_to_df(admin_snapshot()$submits_note, "n")
-    if (nrow(d) == 0L) {
-      plot.new()
-      text(0.5, 0.5, "No submissions yet")
-      return(invisible(NULL))
-    }
-    ggplot(d, aes(x = reorder(key, value), y = value)) +
-      geom_col(fill = "#17a2b8") +
-      coord_flip() +
-      theme_minimal() +
-      labs(x = NULL, y = "Count", title = "Successful submits")
-  })
-
-  output$plot_demo_dropoff <- renderPlot({
-    req(isTRUE(rv$admin_ok), cancelOutput = TRUE)
-    snap <- admin_snapshot()
-    visitors <- snap$summary$visitors
-    if (is.na(visitors) || visitors < 1L) visitors <- 1L
-    qf <- snap$summary$q_first
-    keys <- demo_question_keys_ordered()
-    counts <- vapply(keys, function(k) {
-      x <- unname(qf[k])
-      if (length(x) == 0L || is.na(x[1L])) 0 else suppressWarnings(as.numeric(x[1L]))
-    }, numeric(1))
-    d <- data.frame(
-      step = keys,
-      reached = as.numeric(counts),
-      stringsAsFactors = FALSE
-    )
-    d$pct_of_visitors <- round(100 * d$reached / visitors, 1)
-    ggplot(d, aes(x = reorder(step, seq_len(nrow(d))), y = reached)) +
-      geom_col(fill = "#e8a0a8") +
-      coord_flip() +
-      theme_minimal() +
-      labs(x = NULL, y = "Unique sessions (first interaction)", title = NULL)
-  })
-
-  output$plot_eval_touch <- renderPlot({
-    req(isTRUE(rv$admin_ok), cancelOutput = TRUE)
-    qf <- admin_snapshot()$summary$q_first
-    if (length(qf) == 0L) {
-      plot.new()
-      text(0.5, 0.5, "No evaluation touch data yet")
-      return(invisible(NULL))
-    }
-    nm <- names(qf)
-    keep <- nm[grepl(":", nm, fixed = TRUE) & !startsWith(nm, "demo:")]
-    if (length(keep) == 0L) {
-      plot.new()
-      text(0.5, 0.5, "No per-note question keys yet")
-      return(invisible(NULL))
-    }
-    d <- data.frame(
-      key = keep,
-      value = suppressWarnings(as.numeric(unname(qf[keep]))),
-      stringsAsFactors = FALSE
-    )
-    d <- d[!is.na(d$value) & d$value > 0, , drop = FALSE]
-    d <- d[order(-d$value), , drop = FALSE]
-    d <- head(d, 30L)
-    ggplot(d, aes(x = reorder(key, value), y = value)) +
-      geom_col(fill = "#6f42c1", alpha = 0.85) +
-      coord_flip() +
-      theme_minimal() +
-      labs(x = NULL, y = "Sessions (first touch)", title = NULL)
-  })
-
-  output$plot_likert_means <- renderPlot({
-    req(isTRUE(rv$admin_ok), cancelOutput = TRUE)
-    df <- admin_snapshot()$responses
-    lik_cols <- intersect(
-      names(df),
-      c(
-        "hc_understand", "hc_comfort", "hc_clarity", "hc_when_help",
-        "dc_understand", "dc_comfort", "dc_clarity", "dc_when_help",
-        "faq_understand", "faq_comfort", "faq_clarity", "faq_when_help"
-      )
-    )
-    if (nrow(df) == 0L || length(lik_cols) == 0L) {
-      plot.new()
-      text(0.5, 0.5, "No response rows yet")
-      return(invisible(NULL))
-    }
-    df2 <- df %>% mutate(note_id = as.character(note_id))
-    long <- df2 %>%
-      select(note_id, dplyr::all_of(lik_cols)) %>%
-      pivot_longer(-note_id, names_to = "item", values_to = "value") %>%
-      mutate(value = suppressWarnings(as.numeric(value))) %>%
-      filter(!is.na(value))
-    if (nrow(long) == 0L) {
-      plot.new()
-      text(0.5, 0.5, "No numeric ratings")
-      return(invisible(NULL))
-    }
-    agg <- long %>%
-      group_by(note_id, item) %>%
-      summarise(mean_score = mean(value), n = dplyr::n(), .groups = "drop")
-    ggplot(agg, aes(x = item, y = mean_score, fill = note_id)) +
-      geom_col(position = position_dodge(width = 0.8), width = 0.75) +
-      theme_minimal() +
-      theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-      labs(x = NULL, y = "Mean (1–10)", title = "By note and item") +
-      ylim(0, 10)
-  })
-
-  output$tbl_recent <- renderTable(
-    {
-      req(isTRUE(rv$admin_ok), cancelOutput = TRUE)
-      df <- admin_snapshot()$responses
-      if (nrow(df) == 0L) {
-        return(data.frame(Message = "No rows"))
-      }
-      cols <- intersect(
-        names(df),
-        c(
-          "submitted_at_utc", "session_id", "form_id", "note_id",
-          "participant_email", "demo_age", "hc_understand", "faq_unanswered"
-        )
-      )
-      head(df[, cols, drop = FALSE], 40L)
-    },
-    width = "100%"
-  )
+  # Ensure note selector + sliders exist before main panel reads input$note_select (avoids race crashes).
+  outputOptions(output, "sidebar_body", priority = 100L)
+  outputOptions(output, "main_body", priority = 0L)
 }
 
 shinyApp(ui, server)

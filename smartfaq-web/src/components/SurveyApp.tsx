@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "rea
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
-import { FileText, LayoutList, Sparkles, ChevronRight, ChevronLeft } from "lucide-react";
+import { FileText, LayoutList, MessageCircleQuestion, ChevronRight, ChevronLeft, CheckCircle2 } from "lucide-react";
 import {
   DEFAULT_FORM,
   EVAL_FIELDS,
@@ -13,6 +13,15 @@ import {
   getFormNoteIds,
   getNote,
 } from "@/lib/study";
+import {
+  DEMO_INTRO,
+  DC_LIKERT,
+  FAQ_LIKERT,
+  FAQ_UNANSWERED_LABEL,
+  HC_LIKERT,
+  INTRO_BULLETS,
+  INTRO_PARAGRAPHS,
+} from "@/lib/survey-copy";
 import type { SurveyResponse } from "@/lib/types";
 import { trackClient } from "@/components/track";
 
@@ -57,6 +66,7 @@ function Likert({
   value,
   onChange,
   required,
+  kind,
 }: {
   label: React.ReactNode;
   left: string;
@@ -64,26 +74,36 @@ function Likert({
   value: number;
   onChange: (n: number) => void;
   required?: boolean;
+  /** Hospital course: no “On a scale…” prefix. Discharge / SmartFAQs: Google Forms wording. */
+  kind: "hc" | "scaled";
 }) {
-  return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-slate-800">
+  const fullLabel =
+    kind === "scaled" ? (
+      <>
+        On a scale of 1–10, {label}
+        {required ? <span className="text-rose-600"> *</span> : null}
+      </>
+    ) : (
+      <>
         {label}
         {required ? <span className="text-rose-600"> *</span> : null}
-        <span className="ml-1 font-normal text-slate-500">(1–10)</span>
-      </label>
+      </>
+    );
+  return (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium leading-snug text-[#212529]">{fullLabel}</label>
       <div className="flex flex-wrap items-center gap-3">
-        <span className="max-w-[7rem] text-xs leading-tight text-slate-500">{left}</span>
+        <span className="max-w-[7rem] text-xs leading-tight text-[#6c757d]">{left}</span>
         <input
           type="range"
           min={1}
           max={10}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="h-2 flex-1 min-w-[8rem] cursor-pointer accent-teal-600"
+          className="h-2 flex-1 min-w-[8rem] cursor-pointer accent-[#17a2b8]"
         />
-        <span className="max-w-[7rem] text-right text-xs leading-tight text-slate-500">{right}</span>
-        <span className="w-8 text-center text-sm font-semibold tabular-nums text-teal-800">{value}</span>
+        <span className="max-w-[7rem] text-right text-xs leading-tight text-[#6c757d]">{right}</span>
+        <span className="w-8 text-center text-sm font-semibold tabular-nums text-[#138496]">{value}</span>
       </div>
     </div>
   );
@@ -199,6 +219,7 @@ function InnerSurvey() {
       "demo_age",
       "demo_race",
       "demo_hispanic",
+      "demo_education",
       "demo_healthcare_bg",
       "demo_recent_discharge",
       "demo_confident_forms",
@@ -220,7 +241,7 @@ function InnerSurvey() {
     for (const k of EVAL_FIELDS) {
       if (a[k] == null || Number.isNaN(a[k])) e.push(k);
     }
-    if (!a.faq_unanswered) e.push("faq_unanswered");
+    if (!a.faq_unanswered || !["Yes", "No"].includes(a.faq_unanswered)) e.push("faq_unanswered");
     return e;
   };
 
@@ -294,27 +315,26 @@ function InnerSurvey() {
 
   if (!sessionId) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center text-slate-500">
-        Starting session…
+      <div className="flex min-h-[40vh] items-center justify-center bg-[#f8f9fa] text-[#6c757d]">
+        Preparing survey…
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100">
-      <header className="border-b border-slate-800/10 bg-slate-900 text-white shadow-lg">
+    <div className="min-h-screen bg-[#f8f9fa] text-[#212529]">
+      <header className="bg-[#2c3e50] text-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-widest text-teal-300/90">Research</p>
-            <h1 className="text-lg font-semibold tracking-tight sm:text-xl">SmartFAQs — patient perspective</h1>
-          </div>
+          <h1 className="text-base font-semibold tracking-wide sm:text-lg">
+            SmartFAQs Survey — Patient Perspective
+          </h1>
           <div className="flex items-center gap-3">
-            <span className="hidden rounded-full bg-white/10 px-3 py-1 text-xs text-slate-200 sm:inline">
-              Form <span className="font-mono text-teal-300">{formId}</span>
+            <span className="hidden rounded border border-white/25 bg-white/5 px-2.5 py-1 font-mono text-xs text-white/90 sm:inline">
+              Form {formId}
             </span>
             <Link
               href="/admin"
-              className="rounded-lg border border-white/20 px-3 py-1.5 text-sm text-slate-200 transition hover:bg-white/10"
+              className="rounded border border-white/30 px-3 py-1.5 text-sm text-white/90 transition hover:bg-white/10"
             >
               Admin
             </Link>
@@ -322,33 +342,36 @@ function InnerSurvey() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[minmax(280px,380px)_1fr] lg:gap-10 lg:px-6 lg:py-10">
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[minmax(280px,380px)_1fr] lg:gap-8 lg:px-6 lg:py-8">
         {/* Sidebar */}
-        <aside className="order-2 space-y-6 lg:order-1">
-          <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm shadow-slate-200/60 backdrop-blur-sm">
-            <nav className="mb-4 flex gap-2 text-xs font-medium text-slate-500">
-              <span
-                className={step === "intro" ? "text-teal-700" : ""}
-              >{`Intro`}</span>
-              <span>→</span>
-              <span className={step === "demographics" ? "text-teal-700" : ""}>Demographics</span>
-              <span>→</span>
-              <span className={step === "evaluate" || step === "thanks" ? "text-teal-700" : ""}>Notes</span>
+        <aside className="order-2 space-y-4 lg:order-1">
+          <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+            <nav className="mb-4 flex flex-wrap gap-1.5 text-xs font-medium text-[#6c757d]">
+              <span className={step === "intro" ? "font-semibold text-[#2c3e50]" : ""}>Intro</span>
+              <span aria-hidden>→</span>
+              <span className={step === "demographics" ? "font-semibold text-[#2c3e50]" : ""}>Demographics</span>
+              <span aria-hidden>→</span>
+              <span className={step === "evaluate" || step === "thanks" ? "font-semibold text-[#2c3e50]" : ""}>
+                Notes
+              </span>
             </nav>
 
             {step === "intro" && (
-              <p className="text-sm text-slate-600">When you’re ready, continue to demographics using the buttons below.</p>
+              <p className="text-sm leading-relaxed text-[#495057]">
+                When you are ready, use <strong className="font-semibold text-[#2c3e50]">Next section</strong> below to continue to
+                demographics.
+              </p>
             )}
 
             {step === "thanks" && (
-              <p className="text-sm font-medium text-teal-800">All set — thank you for completing every note in this form.</p>
+              <p className="text-sm font-medium text-[#2c3e50]">All set — thank you for completing every note in this form.</p>
             )}
 
             {step === "demographics" && (
               <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
-                <h2 className="text-sm font-semibold text-slate-900">Your information</h2>
+                <h2 className="text-sm font-semibold text-[#2c3e50]">Your information</h2>
                 <input
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm outline-none ring-teal-600/30 focus:border-teal-500 focus:ring-2"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#17a2b8] focus:ring-1 focus:ring-[#17a2b8]"
                   placeholder="Email *"
                   value={demo.participant_email}
                   onChange={(e) => {
@@ -357,7 +380,7 @@ function InnerSurvey() {
                   }}
                 />
                 <input
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-600/30"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#17a2b8] focus:ring-1 focus:ring-[#17a2b8]"
                   placeholder="Name (optional)"
                   value={demo.participant_name}
                   onChange={(e) => {
@@ -368,7 +391,7 @@ function InnerSurvey() {
                 <label className="flex items-start gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"
-                    className="mt-1 accent-teal-600"
+                    className="mt-1 accent-[#17a2b8]"
                     checked={demo.consent_acknowledgments_listed}
                     onChange={(e) => {
                       setDemo((d) => ({ ...d, consent_acknowledgments_listed: e.target.checked }));
@@ -378,16 +401,14 @@ function InnerSurvey() {
                   I consent to be listed in the acknowledgments of the paper.
                 </label>
                 <hr className="border-slate-200" />
-                <p className="text-xs text-slate-500">
-                  We ask demographic questions to understand whether SmartFAQs help diverse populations.
-                </p>
+                <p className="text-xs leading-relaxed text-[#6c757d]">{DEMO_INTRO}</p>
                 {/* Simplified: key demo radios as select for space — use native selects where long lists */}
                 <div className="space-y-3 text-sm">
                   <label className="block font-medium text-slate-800">
-                    Age <span className="text-rose-600">*</span>
+                    How old are you? <span className="text-rose-600">*</span>
                   </label>
                   <select
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-teal-500"
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#17a2b8] focus:ring-1 focus:ring-[#17a2b8]"
                     value={demo.demo_age}
                     onChange={(e) => {
                       setDemo((d) => ({ ...d, demo_age: e.target.value }));
@@ -400,10 +421,10 @@ function InnerSurvey() {
                     ))}
                   </select>
                   <label className="block font-medium text-slate-800">
-                    Race <span className="text-rose-600">*</span>
+                    How do you describe your race? <span className="text-rose-600">*</span>
                   </label>
                   <select
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-teal-500"
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#17a2b8] focus:ring-1 focus:ring-[#17a2b8]"
                     value={demo.demo_race}
                     onChange={(e) => {
                       setDemo((d) => ({ ...d, demo_race: e.target.value }));
@@ -417,7 +438,7 @@ function InnerSurvey() {
                   </select>
                   {demo.demo_race === "Other" && (
                     <input
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
                       placeholder="Specify race"
                       value={demo.demo_race_other}
                       onChange={(e) => {
@@ -428,22 +449,22 @@ function InnerSurvey() {
                   )}
                   {(
                     [
-                      ["demo_hispanic", "Hispanic / Latino / Spanish origin?", ["Yes", "No", "Prefer not to answer"]],
-                      ["demo_education", "Education", ["High School Experience, but no Degree", "High School or GED Equivalent", "Some College Experience, but no Degree", "College Graduate (BS, BA)", "Master's Degree (MA, MS, MBA)", "Professional Degree (MD, JD)", "Doctorate Degree (PhD)", "Prefer not to say"]],
-                      ["demo_healthcare_bg", "Healthcare background", ["Yes – clinical (e.g., physician, nurse, therapist)", "Yes – non-clinical (e.g., public health, research, admin)", "No", "Prefer not to answer"]],
-                      ["demo_recent_discharge", "Discharged from hospital or ED in past 6 months?", ["Yes", "No"]],
-                      ["demo_confident_forms", "Confidence filling medical forms", ["Extremely confident", "Quite confident", "Somewhat confident", "A little confident", "Not at all confident"]],
-                      ["demo_digital_comfort", "Comfort with digital health tools", ["Very comfortable", "Somewhat comfortable", "Neutral", "Somewhat uncomfortable", "Very uncomfortable"]],
-                      ["demo_caregiver", "Help manage care for a family member?", ["Yes", "No"]],
-                      ["demo_acknowledge_publication", "OK to be acknowledged by name in publications?", ["Yes", "No"]],
+                      ["demo_hispanic", "Do you identify as Hispanic, Latino/a, or of Spanish origin?", ["Yes", "No", "Prefer not to answer"]],
+                      ["demo_education", "What is the highest level of education you have completed?", ["High School Experience, but no Degree", "High School or GED Equivalent", "Some College Experience, but no Degree", "College Graduate (BS, BA)", "Master's Degree (MA, MS, MBA)", "Professional Degree (MD, JD)", "Doctorate Degree (PhD)", "Prefer not to say"]],
+                      ["demo_healthcare_bg", "Do you have a medical or healthcare background?", ["Yes – clinical (e.g., physician, nurse, therapist)", "Yes – non-clinical (e.g., public health, research, admin)", "No", "Prefer not to answer"]],
+                      ["demo_recent_discharge", "Have you been discharged from a hospital or emergency department in the past 6 months?", ["Yes", "No"]],
+                      ["demo_confident_forms", "How confident are you filling out medical forms on your own?", ["Extremely confident", "Quite confident", "Somewhat confident", "A little confident", "Not at all confident"]],
+                      ["demo_digital_comfort", "How comfortable are you using digital tools (apps, websites, patient portals) to manage your health?", ["Very comfortable", "Somewhat comfortable", "Neutral", "Somewhat uncomfortable", "Very uncomfortable"]],
+                      ["demo_caregiver", "Do you currently help manage healthcare for a family member or loved one?", ["Yes", "No"]],
+                      ["demo_acknowledge_publication", "Would you be comfortable being acknowledged (by name) for your contributions in future publications resulting from this work?", ["Yes", "No"]],
                     ] as const
                   ).map(([key, label, opts]) => (
                     <div key={key}>
                       <label className="mb-1 block font-medium text-slate-800">
-                        {label} {key !== "demo_education" && <span className="text-rose-600">*</span>}
+                        {label} <span className="text-rose-600">*</span>
                       </label>
                       <select
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                        className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#17a2b8] focus:ring-1 focus:ring-[#17a2b8]"
                         value={demo[key]}
                         onChange={(e) => {
                           const v = e.target.value;
@@ -464,9 +485,9 @@ function InnerSurvey() {
 
             {step === "evaluate" && (
               <div className="space-y-4">
-                <label className="block text-sm font-medium text-slate-800">Select note</label>
+                <label className="block text-sm font-medium text-[#2c3e50]">Select note</label>
                 <select
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-mono outline-none focus:border-teal-500"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-mono outline-none focus:border-[#17a2b8] focus:ring-1 focus:ring-[#17a2b8]"
                   value={activeNoteId}
                   onChange={(e) => setActiveNoteId(e.target.value)}
                 >
@@ -475,36 +496,47 @@ function InnerSurvey() {
                   ))}
                 </select>
                 <div>
-                  <div className="mb-1 flex justify-between text-xs text-slate-500">
+                  <div className="progress-label mb-1 flex justify-between text-sm text-[#6c757d]">
                     <span>Progress</span>
-                    <span>{doneCount} / {total} ({pct}%)</span>
+                    <span>
+                      {doneCount} / {total} ({pct}%)
+                    </span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-200">
+                  <div className="h-2 overflow-hidden rounded-sm bg-slate-200">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 transition-all duration-500"
+                      className="h-full rounded-sm bg-[#17a2b8] transition-all duration-500"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
                 </div>
-                <div className="space-y-6 border-t border-slate-100 pt-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">Hospital course</p>
-                  <Likert label="How understandable was this hospital course?" left="Did not understand" right="Completely understand" value={getAnswers(activeNoteId).hc_understand} onChange={(n) => { markTouch(`${activeNoteId}:hc_understand`); setEval(activeNoteId, { hc_understand: n }); }} required />
-                  <Likert label="Comfort managing your care from this hospital course?" left="Uncomfortable" right="Comfortable" value={getAnswers(activeNoteId).hc_comfort} onChange={(n) => { markTouch(`${activeNoteId}:hc_comfort`); setEval(activeNoteId, { hc_comfort: n }); }} required />
-                  <Likert label="Clarity on next steps?" left="Not clear" right="Very clear" value={getAnswers(activeNoteId).hc_clarity} onChange={(n) => { markTouch(`${activeNoteId}:hc_clarity`); setEval(activeNoteId, { hc_clarity: n }); }} required />
-                  <Likert label="Understanding when to seek help if worse?" left="None" right="Complete" value={getAnswers(activeNoteId).hc_when_help} onChange={(n) => { markTouch(`${activeNoteId}:hc_when_help`); setEval(activeNoteId, { hc_when_help: n }); }} required />
-                  <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">Discharge summary</p>
-                  <Likert label="Understandable discharge summary?" left="Did not understand" right="Completely understand" value={getAnswers(activeNoteId).dc_understand} onChange={(n) => { markTouch(`${activeNoteId}:dc_understand`); setEval(activeNoteId, { dc_understand: n }); }} required />
-                  <Likert label="Comfort managing care from discharge summary?" left="Uncomfortable" right="Comfortable" value={getAnswers(activeNoteId).dc_comfort} onChange={(n) => { markTouch(`${activeNoteId}:dc_comfort`); setEval(activeNoteId, { dc_comfort: n }); }} required />
-                  <Likert label="Clarity on next steps (discharge)?" left="Not clear" right="Very clear" value={getAnswers(activeNoteId).dc_clarity} onChange={(n) => { markTouch(`${activeNoteId}:dc_clarity`); setEval(activeNoteId, { dc_clarity: n }); }} required />
-                  <Likert label="When to seek help (discharge)?" left="None" right="Complete" value={getAnswers(activeNoteId).dc_when_help} onChange={(n) => { markTouch(`${activeNoteId}:dc_when_help`); setEval(activeNoteId, { dc_when_help: n }); }} required />
-                  <p className="text-xs font-semibold uppercase tracking-wide text-teal-800">SmartFAQs</p>
-                  <Likert label="Understandable FAQs?" left="Did not understand" right="Completely understand" value={getAnswers(activeNoteId).faq_understand} onChange={(n) => { markTouch(`${activeNoteId}:faq_understand`); setEval(activeNoteId, { faq_understand: n }); }} required />
-                  <Likert label="Comfort managing care from FAQs?" left="Uncomfortable" right="Comfortable" value={getAnswers(activeNoteId).faq_comfort} onChange={(n) => { markTouch(`${activeNoteId}:faq_comfort`); setEval(activeNoteId, { faq_comfort: n }); }} required />
-                  <Likert label="Clarity on next steps (FAQs)?" left="Not clear" right="Very clear" value={getAnswers(activeNoteId).faq_clarity} onChange={(n) => { markTouch(`${activeNoteId}:faq_clarity`); setEval(activeNoteId, { faq_clarity: n }); }} required />
-                  <Likert label="When to seek help (FAQs)?" left="None" right="Complete" value={getAnswers(activeNoteId).faq_when_help} onChange={(n) => { markTouch(`${activeNoteId}:faq_when_help`); setEval(activeNoteId, { faq_when_help: n }); }} required />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAnswersByNote((prev) => ({ ...prev, [activeNoteId]: defaultNoteAnswers() }));
+                  }}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-[#6c757d] transition hover:bg-slate-50"
+                >
+                  Reset this note
+                </button>
+                <div className="space-y-4 border-t border-slate-200 pt-4">
+                  <p className="survey-section-title">Hospital course</p>
+                  <Likert kind="hc" label={HC_LIKERT.understand.q} left={HC_LIKERT.understand.left} right={HC_LIKERT.understand.right} value={getAnswers(activeNoteId).hc_understand} onChange={(n) => { markTouch(`${activeNoteId}:hc_understand`); setEval(activeNoteId, { hc_understand: n }); }} required />
+                  <Likert kind="hc" label={HC_LIKERT.comfort.q} left={HC_LIKERT.comfort.left} right={HC_LIKERT.comfort.right} value={getAnswers(activeNoteId).hc_comfort} onChange={(n) => { markTouch(`${activeNoteId}:hc_comfort`); setEval(activeNoteId, { hc_comfort: n }); }} required />
+                  <Likert kind="hc" label={HC_LIKERT.clarity.q} left={HC_LIKERT.clarity.left} right={HC_LIKERT.clarity.right} value={getAnswers(activeNoteId).hc_clarity} onChange={(n) => { markTouch(`${activeNoteId}:hc_clarity`); setEval(activeNoteId, { hc_clarity: n }); }} required />
+                  <Likert kind="hc" label={HC_LIKERT.whenHelp.q} left={HC_LIKERT.whenHelp.left} right={HC_LIKERT.whenHelp.right} value={getAnswers(activeNoteId).hc_when_help} onChange={(n) => { markTouch(`${activeNoteId}:hc_when_help`); setEval(activeNoteId, { hc_when_help: n }); }} required />
+                  <p className="survey-section-title">Discharge summary</p>
+                  <Likert kind="scaled" label={DC_LIKERT.understand.q} left={DC_LIKERT.understand.left} right={DC_LIKERT.understand.right} value={getAnswers(activeNoteId).dc_understand} onChange={(n) => { markTouch(`${activeNoteId}:dc_understand`); setEval(activeNoteId, { dc_understand: n }); }} required />
+                  <Likert kind="scaled" label={DC_LIKERT.comfort.q} left={DC_LIKERT.comfort.left} right={DC_LIKERT.comfort.right} value={getAnswers(activeNoteId).dc_comfort} onChange={(n) => { markTouch(`${activeNoteId}:dc_comfort`); setEval(activeNoteId, { dc_comfort: n }); }} required />
+                  <Likert kind="scaled" label={DC_LIKERT.clarity.q} left={DC_LIKERT.clarity.left} right={DC_LIKERT.clarity.right} value={getAnswers(activeNoteId).dc_clarity} onChange={(n) => { markTouch(`${activeNoteId}:dc_clarity`); setEval(activeNoteId, { dc_clarity: n }); }} required />
+                  <Likert kind="scaled" label={DC_LIKERT.whenHelp.q} left={DC_LIKERT.whenHelp.left} right={DC_LIKERT.whenHelp.right} value={getAnswers(activeNoteId).dc_when_help} onChange={(n) => { markTouch(`${activeNoteId}:dc_when_help`); setEval(activeNoteId, { dc_when_help: n }); }} required />
+                  <p className="survey-section-title">SmartFAQs</p>
+                  <Likert kind="scaled" label={FAQ_LIKERT.understand.q} left={FAQ_LIKERT.understand.left} right={FAQ_LIKERT.understand.right} value={getAnswers(activeNoteId).faq_understand} onChange={(n) => { markTouch(`${activeNoteId}:faq_understand`); setEval(activeNoteId, { faq_understand: n }); }} required />
+                  <Likert kind="scaled" label={FAQ_LIKERT.comfort.q} left={FAQ_LIKERT.comfort.left} right={FAQ_LIKERT.comfort.right} value={getAnswers(activeNoteId).faq_comfort} onChange={(n) => { markTouch(`${activeNoteId}:faq_comfort`); setEval(activeNoteId, { faq_comfort: n }); }} required />
+                  <Likert kind="scaled" label={FAQ_LIKERT.clarity.q} left={FAQ_LIKERT.clarity.left} right={FAQ_LIKERT.clarity.right} value={getAnswers(activeNoteId).faq_clarity} onChange={(n) => { markTouch(`${activeNoteId}:faq_clarity`); setEval(activeNoteId, { faq_clarity: n }); }} required />
+                  <Likert kind="scaled" label={FAQ_LIKERT.whenHelp.q} left={FAQ_LIKERT.whenHelp.left} right={FAQ_LIKERT.whenHelp.right} value={getAnswers(activeNoteId).faq_when_help} onChange={(n) => { markTouch(`${activeNoteId}:faq_when_help`); setEval(activeNoteId, { faq_when_help: n }); }} required />
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-800">
-                      Unanswered questions needing your doctor? <span className="text-rose-600">*</span>
+                    <label className="mb-2 block text-sm font-medium leading-snug text-slate-800">
+                      {FAQ_UNANSWERED_LABEL} <span className="text-rose-600">*</span>
                     </label>
                     <div className="flex gap-4">
                       {(["Yes", "No"] as const).map((x) => (
@@ -512,7 +544,7 @@ function InnerSurvey() {
                           <input
                             type="radio"
                             name="faq_unanswered"
-                            className="accent-teal-600"
+                            className="accent-[#17a2b8]"
                             checked={getAnswers(activeNoteId).faq_unanswered === x}
                             onChange={() => {
                               markTouch(`${activeNoteId}:faq_unanswered`);
@@ -537,9 +569,9 @@ function InnerSurvey() {
                 if (step === "demographics") setStep("intro");
                 if (step === "evaluate") setStep("demographics");
               }}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-rose-200/80 bg-white px-4 py-2.5 text-sm font-medium text-rose-900 shadow-sm transition hover:border-rose-300 hover:bg-rose-50 disabled:opacity-40"
+              className="inline-flex items-center justify-center gap-2 rounded-md border-2 border-[#e8a0a8] bg-white px-4 py-2.5 text-sm font-medium text-[#a33d48] transition hover:border-[#d67884] hover:bg-[#fdecee] disabled:opacity-40"
             >
-              <ChevronLeft className="h-4 w-4" /> Previous
+              <ChevronLeft className="h-4 w-4" aria-hidden />← Previous section
             </button>
             <button
               type="button"
@@ -555,9 +587,9 @@ function InnerSurvey() {
                 }
               }}
               disabled={step === "evaluate" || step === "thanks"}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border-2 border-rose-200/80 bg-white px-4 py-2.5 text-sm font-medium text-rose-900 shadow-sm transition hover:border-rose-300 hover:bg-rose-50 disabled:opacity-40"
+              className="inline-flex items-center justify-center gap-2 rounded-md border-2 border-[#e8a0a8] bg-white px-4 py-2.5 text-sm font-medium text-[#a33d48] transition hover:border-[#d67884] hover:bg-[#fdecee] disabled:opacity-40"
             >
-              Next <ChevronRight className="h-4 w-4" />
+              Next section <ChevronRight className="h-4 w-4" aria-hidden />→
             </button>
           </div>
 
@@ -565,9 +597,9 @@ function InnerSurvey() {
             <button
               type="button"
               onClick={() => void submitNote()}
-              className="w-full rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-teal-600/25 transition hover:from-teal-500 hover:to-cyan-500"
+              className="w-full rounded-md border border-transparent bg-[#17a2b8] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#138496]"
             >
-              Submit this note
+              Submit this note ✓
             </button>
           )}
         </aside>
@@ -575,85 +607,96 @@ function InnerSurvey() {
         {/* Main reader */}
         <main className="order-1 lg:order-2">
           {step === "intro" && (
-            <article className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm sm:p-10">
-              <h2 className="text-2xl font-semibold tracking-tight text-slate-900">About this survey</h2>
-              <div className="prose prose-slate mt-6 max-w-none prose-p:text-slate-600 prose-li:text-slate-600">
-                <p>We are evaluating <strong>SmartFAQs</strong>, a new way of presenting hospital discharge information in a question-and-answer format—designed to make instructions easier to understand and more actionable after you leave the hospital.</p>
-                <p>You will review discharge information in the SmartFAQs format and answer short questions about clarity, understanding, usefulness, and confidence managing care after discharge.</p>
+            <article className="rounded-md border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+              <h2 className="text-xl font-semibold text-[#2c3e50]">About this survey</h2>
+              <div className="prose prose-slate mt-5 max-w-none prose-p:text-[#495057] prose-li:text-[#495057] prose-headings:text-[#2c3e50]">
+                {INTRO_PARAGRAPHS.map((p) => (
+                  <p key={p}>{p}</p>
+                ))}
                 <ul>
-                  <li>Takes about <strong>15–20 minutes</strong>.</li>
-                  <li>Participation is voluntary; skip any question or stop anytime.</li>
-                  <li>Your answers help improve patient-centered health communication.</li>
+                  {INTRO_BULLETS.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
                 </ul>
               </div>
             </article>
           )}
 
           {step === "demographics" && (
-            <div className="rounded-2xl border border-dashed border-teal-200 bg-teal-50/40 p-8 text-center text-slate-600">
-              <p className="text-lg font-medium text-slate-800">Questions are in the left panel</p>
-              <p className="mt-2 text-sm">Fields marked * are required before you can rate the clinical notes.</p>
+            <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center text-[#495057] shadow-sm">
+              <p className="text-lg font-medium text-[#2c3e50]">Demographics</p>
+              <p className="mt-2 text-sm leading-relaxed">
+                Please complete the questions in the <strong>left panel</strong>. Fields marked <span className="text-red-600">*</span> are
+                required before you can proceed to the clinical materials.
+              </p>
             </div>
           )}
 
           {(step === "evaluate" || step === "thanks") && (
             <>
               {step === "thanks" ? (
-                <div className="rounded-2xl border border-teal-200 bg-gradient-to-br from-teal-50 to-white p-10 text-center shadow-inner">
-                  <Sparkles className="mx-auto h-12 w-12 text-teal-600" />
-                  <h2 className="mt-4 text-2xl font-semibold text-slate-900">Thank you</h2>
-                  <p className="mt-2 text-slate-600">Your responses are saved. You may close this window.</p>
-                  <Link href="/" className="mt-6 inline-block text-sm font-medium text-teal-700 underline">Back to start</Link>
+                <div className="rounded-md border border-slate-200 bg-white p-10 text-center shadow-sm">
+                  <CheckCircle2 className="mx-auto h-14 w-14 text-[#17a2b8]" strokeWidth={1.25} aria-hidden />
+                  <h2 className="mt-4 text-xl font-semibold text-[#2c3e50]">Thanks for completing the survey</h2>
+                  <p className="mt-2 text-sm text-[#6c757d]">Your responses have been recorded. You may close this window.</p>
+                  <Link
+                    href="/"
+                    className="mt-6 inline-block text-sm font-medium text-[#138496] underline decoration-[#17a2b8] underline-offset-2 hover:text-[#117a8b]"
+                  >
+                    Back to start
+                  </Link>
                 </div>
               ) : note ? (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                    <FileText className="h-5 w-5 text-teal-600" />
-                    <span className="font-mono text-sm font-semibold text-slate-800">{activeNoteId}</span>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+                    <FileText className="h-5 w-5 text-[#17a2b8]" aria-hidden />
+                    <span className="font-mono text-sm font-semibold text-[#2c3e50]">{activeNoteId}</span>
                     {completed.has(activeNoteId) && (
-                      <span className="rounded-full bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800">Submitted</span>
+                      <span className="rounded border border-[#cfe2ff] bg-[#e7f1ff] px-2 py-0.5 text-xs font-medium text-[#2c3e50]">
+                        Submitted
+                      </span>
                     )}
                   </div>
-                  <div className="flex flex-wrap gap-2 rounded-xl bg-slate-100/80 p-1">
+                  <div className="flex flex-wrap gap-1 rounded-md border border-slate-200 bg-[#e9ecef] p-1">
                     {(
                       [
                         ["hc", "Hospital course", LayoutList],
                         ["dc", "Discharge summary", FileText],
-                        ["faq", "FAQs", Sparkles],
+                        ["faq", "SmartFAQs", MessageCircleQuestion],
                       ] as const
                     ).map(([id, label, Icon]) => (
                       <button
                         key={id}
                         type="button"
                         onClick={() => setTab(id)}
-                        className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition ${
+                        className={`inline-flex items-center gap-2 rounded px-3 py-2 text-sm font-medium transition ${
                           tab === id
-                            ? "bg-white text-teal-900 shadow-sm"
-                            : "text-slate-600 hover:text-slate-900"
+                            ? "border border-slate-200 bg-white text-[#2c3e50] shadow-sm"
+                            : "text-[#495057] hover:bg-white/60 hover:text-[#2c3e50]"
                         }`}
                       >
-                        <Icon className="h-4 w-4" />
+                        <Icon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
                         {label}
                       </button>
                     ))}
                   </div>
-                  <div className="min-h-[320px] rounded-2xl border border-slate-200/90 border-l-4 border-l-teal-500 bg-white p-6 shadow-sm sm:p-8">
+                  <div className="note-reading-panel min-h-[280px] p-4 sm:p-5">
                     {tab === "hc" && (
                       <>
-                        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Hospital course</h3>
-                        <div className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{note.hospital_course}</div>
+                        <h3 className="text-sm font-semibold text-[#2c3e50]">Hospital course</h3>
+                        <div className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[#212529]">{note.hospital_course}</div>
                       </>
                     )}
                     {tab === "dc" && (
                       <>
-                        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Discharge summary</h3>
-                        <div className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{note.discharge_summary}</div>
+                        <h3 className="text-sm font-semibold text-[#2c3e50]">Discharge summary</h3>
+                        <div className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-[#212529]">{note.discharge_summary}</div>
                       </>
                     )}
                     {tab === "faq" && (
                       <>
-                        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">SmartFAQs</h3>
-                        <div className="prose prose-sm prose-slate mt-4 max-w-none prose-headings:text-slate-800 prose-p:text-slate-700">
+                        <h3 className="text-sm font-semibold text-[#2c3e50]">SmartFAQs</h3>
+                        <div className="note-panel-faq prose prose-sm prose-slate mt-3 max-w-none prose-headings:text-[#2c3e50] prose-p:text-[#212529]">
                           <ReactMarkdown>{note.faqs}</ReactMarkdown>
                         </div>
                       </>
@@ -673,7 +716,13 @@ function InnerSurvey() {
 
 export function SurveyApp() {
   return (
-    <Suspense fallback={<div className="p-12 text-center text-slate-500">Loading survey…</div>}>
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center bg-[#f8f9fa] text-sm text-[#6c757d]">
+          Loading survey…
+        </div>
+      }
+    >
       <InnerSurvey />
     </Suspense>
   );

@@ -2,6 +2,7 @@
 .RData
 .Rproj.user
 secrets/
+rsconnect/
 *.json
 !package.json
 Renviron

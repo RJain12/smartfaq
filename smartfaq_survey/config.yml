@@ -9,9 +9,8 @@ forms:
 
 default_form: "1"
 
-# Redis: primary datastore for responses + analytics. Override with env REDIS_URL.
-redis:
-  url: "redis://127.0.0.1:6379"
-  prefix: "smartfaq"
-  # Use ip-api.com for coarse country from server-visible IP (respect their limits).
-  geolookup: true
+# Google Sheet ID (from the sheet URL) — appends one row per submitted note.
+# Share the sheet with your service account email (Editor).
+google_sheet_id: "1TvwIe98o3csJtpbEMuaU-bd8MIe1L-pPPONQWiOfl7k"
+# Bundled copy for deploy (same JSON as your GCP key; file is *.json gitignored — do not commit).
+google_service_account_json: "google_sa.json"

@@ -1,7 +1,7 @@
 # SmartFAQs
 
-- **`smartfaq-web/`** — **Use this for Vercel.** Next.js, TypeScript, Tailwind. Run `npm run dev` → [http://localhost:3000](http://localhost:3000). No Docker, no R.
-- **`smartfaq_survey/`** — Earlier R/Shiny + Redis prototype (fine for local stats workflows, not a Vercel target).
+- **`smartfaq-web/`** — **Use this for Vercel.** Next.js, TypeScript, Tailwind. Run `npm run dev` → [http://localhost:3000](http://localhost:3000). Configure **Google Sheets** (and optional Upstash) per [`smartfaq-web/README.md`](./smartfaq-web/README.md). No Docker, no R.
+- **`smartfaq_survey/`** — R/Shiny survey; responses go to **Google Sheets** (not a Vercel target).
 
 ## GitHub + Vercel (auto deploy on push)
 

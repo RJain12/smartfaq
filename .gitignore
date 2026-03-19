@@ -24,3 +24,4 @@ smartfaq_survey/.Rhistory
 smartfaq_survey/.RData
 smartfaq_survey/.Rproj.user
 .env*.local
+.vercel

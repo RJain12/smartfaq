@@ -1,9 +1,9 @@
 # SmartFAQs — Next.js (Vercel)
 
-This is the **modern deployment** of the survey: **no R, no Shiny, no Docker required** for local development.
+Survey UI for the SmartFAQs study: **Next.js**, **TypeScript**, **Tailwind**. No R/Shiny required for deployment.
 
-- **Local storage**: JSON Lines under `.data/` (gitignored) — works on your machine with `npm run dev`.
-- **Vercel / production**: set **Upstash Redis** env vars so API routes can persist data (Vercel’s filesystem is read-only for app code).
+- **Submissions**: Prefer **Google Sheets** (matches the original R pipeline). Optionally mirror rows to **Upstash Redis** for the in-app admin dashboard.
+- **Local dev**: without Sheets/KV credentials, responses append to **JSON Lines** under `.data/` (gitignored).
 
 ## Run locally
 
@@ -13,26 +13,47 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Try `?form=1` … `?form=5`.
+Open [http://localhost:3000](http://localhost:3000). Use `?form=1` … `?form=5` to pick a form.
 
 - **Admin**: [http://localhost:3000/admin](http://localhost:3000/admin) — default password `aditya` (override with `SMARTFAQ_ADMIN_PASSWORD`). Set `ADMIN_SESSION_SECRET` for production cookies.
 
-## Why we had Docker & R before
+## Google Sheets (production)
 
-The earlier **`smartfaq_survey/`** folder was a **research prototype** in R/Shiny with optional Redis in Docker. That stack does **not** run on Vercel’s serverless model. This Next.js app gives you the same study flow, better UI, and a normal Node hosting path.
+1. Create a Google Cloud project → enable **Google Sheets API**.
+2. Create a **service account**, download its JSON key.
+3. Create a spreadsheet, **share it with the service account email** (Editor).
+4. In Vercel (or `.env.local`), set:
+
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_SHEETS_SPREADSHEET_ID` | ID from the spreadsheet URL |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Full JSON string of the service account key (or use base64 below) |
+| `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` | Alternative: base64-encoded JSON (if raw JSON is awkward in the dashboard) |
+| `GOOGLE_SHEETS_APPEND_RANGE` | Optional, default `Sheet1!A1` — tab and start cell for `spreadsheets.values.append` |
+
+Add a header row once so columns align (see `SHEET_HEADER_ROW` in `src/lib/row-to-sheet.ts`).
+
+### Admin dashboard + Sheets
+
+The **admin** page reads analytics from **Upstash** or **local files**, not from the Sheets API. If you use **Sheets only** (no Upstash), submissions still save to the spreadsheet, but **saved response counts / recent rows here will stay empty**. Set Upstash vars to mirror each submission into Redis for this dashboard, or analyze in Google Sheets.
+
+Optional Upstash:
+
+- `UPSTASH_REDIS_REST_URL` (or `KV_REST_API_URL`)
+- `UPSTASH_REDIS_REST_TOKEN` (or `KV_REST_API_TOKEN`)
 
 ## Deploy on Vercel
 
-1. Push this `smartfaq-web` directory (or monorepo with root = this app) to GitHub.
-2. Import the project in [Vercel](https://vercel.com).
-3. Add environment variables:
-   - `UPSTASH_REDIS_REST_URL`
-   - `UPSTASH_REDIS_REST_TOKEN`
-   - `SMARTFAQ_ADMIN_PASSWORD` (strong value)
-   - `ADMIN_SESSION_SECRET` (long random string)
+1. Push `smartfaq-web` (or set the repo root to this app).
+2. Import in [Vercel](https://vercel.com).
+3. Add env vars: at minimum **Google Sheets** credentials above for durable survey data; plus `SMARTFAQ_ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET` if you use admin.
 
-Without Upstash, **submits will fail** on Vercel (cannot write `.data/`). Locally, `.data/` is created automatically.
+Without Sheets **or** Upstash, **submits will fail on Vercel** (filesystem is not writable for `.data/`).
 
 ## Edit note content
 
-See `src/lib/study.ts` — forms, `NOTE_*` placeholders, and sample text for `NOTE_001` / `NOTE_002`.
+See `src/lib/study.ts` — forms, `NOTE_*` IDs, and markdown/text for each note.
+
+## Legacy R/Shiny
+
+The **`../smartfaq_survey/`** folder is the original R/Shiny app. This Next.js app replaces it for hosting on Vercel while keeping the same question wording (see `src/lib/survey-copy.ts`).

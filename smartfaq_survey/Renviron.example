@@ -1,2 +1,2 @@
-# REDIS_URL=redis://127.0.0.1:6379
-# SMARTFAQ_ADMIN_PASSWORD=use-a-long-random-secret
+# Optional: path to Google service account JSON (if not set in config.yml)
+# GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json

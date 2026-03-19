@@ -6,6 +6,7 @@ import {
   readAllEvents,
   readAllResponses,
 } from "./file-store";
+import { appendSurveyRowToGoogleSheet, googleSheetsConfigured } from "@/lib/google-sheets";
 
 /** Vercel Upstash integration uses KV_REST_*; standalone Upstash uses UPSTASH_REDIS_*. */
 function upstashRest() {
@@ -30,13 +31,43 @@ export async function appendEvent(e: ClientEvent) {
   await appendEventFile(e);
 }
 
+/**
+ * Persists one submission. Priority:
+ * 1) Google Sheets (if `GOOGLE_SHEETS_SPREADSHEET_ID` + service account JSON env are set)
+ * 2) else Upstash Redis (optional analytics / backup)
+ * 3) else local file (dev only)
+ */
 export async function appendResponse(row: SurveyResponse) {
+  if (googleSheetsConfigured()) {
+    await appendSurveyRowToGoogleSheet(row);
+    if (useUpstash()) {
+      try {
+        const { appendResponseUpstash } = await import("./upstash-store");
+        await appendResponseUpstash(row);
+      } catch {
+        /* optional mirror */
+      }
+    }
+    return;
+  }
   if (useUpstash()) {
     const { appendResponseUpstash } = await import("./upstash-store");
     await appendResponseUpstash(row);
     return;
   }
   await appendResponseFile(row);
+}
+
+/** Admin reads events/responses from Upstash or local files — not from the Sheet API. */
+export function storageInfo() {
+  const kv = useUpstash();
+  const sheets = googleSheetsConfigured();
+  return {
+    surveyRowsInGoogleSheets: sheets,
+    adminAnalyticsUsesKv: kv,
+    /** True when rows only land in Sheets and are not mirrored to KV — admin stats stay empty on Vercel. */
+    adminMissingSubmissionsUnlessKv: sheets && !kv,
+  };
 }
 
 export async function loadAnalytics() {

@@ -13,6 +13,11 @@ type Stats = {
   submitCounts: Record<string, number>;
   likertMeans: { note_id: string; item: string; mean: number; n: number }[];
   recentResponses: Record<string, unknown>[];
+  storage?: {
+    surveyRowsInGoogleSheets: boolean;
+    adminAnalyticsUsesKv: boolean;
+    adminMissingSubmissionsUnlessKv: boolean;
+  };
 };
 
 function Bar({ label, value, max }: { label: string; value: number; max: number }) {
@@ -74,20 +79,28 @@ export default function AdminPage() {
     : [];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
+    <div className="min-h-screen bg-[#f8f9fa] text-[#212529]">
+      <header className="bg-[#2c3e50] px-4 py-3 text-white sm:px-6">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <h1 className="text-lg font-semibold">SmartFAQs — admin</h1>
+          <h1 className="text-base font-semibold">SmartFAQs — Admin (study team)</h1>
           <div className="flex gap-2">
-            <Link href="/" className="rounded-lg px-3 py-1.5 text-sm text-teal-700 hover:underline">
+            <Link href="/" className="rounded border border-white/30 px-3 py-1.5 text-sm text-white/90 hover:bg-white/10">
               Survey
             </Link>
             {authed && (
               <>
-                <button type="button" onClick={() => void refresh()} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm">
+                <button
+                  type="button"
+                  onClick={() => void refresh()}
+                  className="rounded border border-white/30 bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/15"
+                >
                   Refresh
                 </button>
-                <button type="button" onClick={() => void logout()} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm">
+                <button
+                  type="button"
+                  onClick={() => void logout()}
+                  className="rounded border border-white/30 px-3 py-1.5 text-sm text-white/90 hover:bg-white/10"
+                >
                   Log out
                 </button>
               </>
@@ -99,7 +112,9 @@ export default function AdminPage() {
       <div className="mx-auto max-w-5xl space-y-8 px-4 py-8 sm:px-6">
         {!authed ? (
           <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <p className="text-sm text-slate-600">Sign in to view analytics (stored in <code className="rounded bg-slate-100 px-1">.data/</code> locally or Upstash on Vercel).</p>
+            <p className="text-sm text-slate-600">
+              Sign in to view analytics (session events and saved rows in <code className="rounded bg-slate-100 px-1">.data/</code> locally, or Upstash on Vercel). Survey responses may also be appended to a Google Sheet — see project README.
+            </p>
             <input
               type="password"
               className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
@@ -119,6 +134,11 @@ export default function AdminPage() {
           </div>
         ) : stats ? (
           <>
+            {stats.storage?.adminMissingSubmissionsUnlessKv && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <strong className="font-semibold">Google Sheets only:</strong> submissions are written to your spreadsheet, but this dashboard does not read from Sheets. Add Upstash env vars to mirror rows here, or analyze directly in the Sheet.
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-xs uppercase text-slate-500">Sessions (events)</p>

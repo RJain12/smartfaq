@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyAdminToken, ADMIN_COOKIE_NAME } from "@/lib/admin-auth";
-import { loadAnalytics } from "@/lib/store";
+import { loadAnalytics, storageInfo } from "@/lib/store";
 import { buildAdminStats } from "@/lib/analytics";
 
 export async function GET() {
@@ -12,5 +12,5 @@ export async function GET() {
   }
   const { events, responses, submitCounts } = await loadAnalytics();
   const stats = buildAdminStats(events, responses, submitCounts);
-  return NextResponse.json(stats);
+  return NextResponse.json({ ...stats, storage: storageInfo() });
 }
