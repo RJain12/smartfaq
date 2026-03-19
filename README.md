@@ -5,4 +5,4 @@
 
 ## GitHub + Vercel (auto deploy on push)
 
-See **[DEPLOY.md](./DEPLOY.md)**. Summary: push this repo to GitHub, then in Vercel import the repo and set **Root Directory** to **`smartfaq-web`**.
+Configured via Vercel CLI: **[DEPLOY.md](./DEPLOY.md)**. **Live:** [smartfaq.vercel.app](https://smartfaq.vercel.app). Push to `main` → production deploy.

@@ -1,42 +1,36 @@
-# Deploy on Vercel (GitHub → auto deploy)
+# Vercel + GitHub (configured)
 
-After this repo is on GitHub, connect Vercel **once**. Every push to the production branch will trigger a new deployment.
+## What’s already done (CLI)
 
-## 1. Push to GitHub
+- **Project:** `rjain12s-projects/smartfaq` on Vercel  
+- **Production URL:** [https://smartfaq.vercel.app](https://smartfaq.vercel.app)  
+- **GitHub:** [github.com/RJain12/smartfaq](https://github.com/RJain12/smartfaq) is **connected** — pushes to the production branch trigger deployments.  
+- **Root directory:** `smartfaq-web` (monorepo: Next.js app lives in that folder).
+
+## Deploy from your machine (optional)
+
+Run **`vercel deploy --prod`** from the **repository root** (`smartfq/`), not from inside `smartfaq-web/`, so Vercel doesn’t double the path:
 
 ```bash
-cd /path/to/smartfq
-git remote add origin https://github.com/RJain12/smartfaq.git   # if not set
-git push -u origin main
+cd /path/to/smartfq   # root that contains smartfaq-web/
+npx vercel deploy --prod --yes
 ```
 
-## 2. Import the repo in Vercel
+Local link metadata lives in `/.vercel/` (gitignored).
 
-1. Go to [vercel.com](https://vercel.com) → **Log in** → **Add New…** → **Project**.
-2. **Import** `RJain12/smartfaq` (install the Vercel GitHub app if prompted).
-3. Expand **Root Directory** → set to **`smartfaq-web`** (critical: the Next.js app lives in this subfolder).
-4. Framework: **Next.js** (auto-detected).
-5. **Environment variables** (production + preview if you want):
+## Environment variables (production)
 
-   | Name | Notes |
-   |------|--------|
-   | `UPSTASH_REDIS_REST_URL` | From [Upstash](https://upstash.com) — required for persistent saves on Vercel |
-   | `UPSTASH_REDIS_REST_TOKEN` | Upstash token |
-   | `SMARTFAQ_ADMIN_PASSWORD` | Strong password (not `aditya`) |
-   | `ADMIN_SESSION_SECRET` | Long random string for admin cookie signing |
+In [Vercel → Project → Settings → Environment Variables](https://vercel.com/rjain12s-projects/smartfaq/settings/environment-variables), add:
 
-6. Click **Deploy**.
+| Name | Purpose |
+|------|--------|
+| `UPSTASH_REDIS_REST_URL` | Persist responses on serverless |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash token |
+| `SMARTFAQ_ADMIN_PASSWORD` | Strong admin password |
+| `ADMIN_SESSION_SECRET` | Long random string for admin cookie |
 
-## 3. Auto deploy
+Without Upstash, **submits won’t persist** in production (read-only filesystem).
 
-With Git connected, Vercel will:
+## Security
 
-- Deploy **production** on pushes to the branch you set as Production (usually **`main`**).
-- Create **preview** deployments for other branches / PRs.
-
-No extra GitHub Action is required for the default Vercel ↔ GitHub integration.
-
-## Troubleshooting
-
-- **Build fails “Cannot find module”**: confirm Root Directory is **`smartfaq-web`**, not the repo root.
-- **Submits don’t persist**: add Upstash env vars; Vercel cannot write the local `.data/` folder in production.
+If any automation or log ever exposed a Vercel token, rotate it under **Vercel → Account → Tokens**.

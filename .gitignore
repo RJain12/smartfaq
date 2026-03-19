@@ -1,6 +1,9 @@
 .DS_Store
 *.pem
 
+# Vercel (local link — do not commit)
+/.vercel/
+
 # Next.js app (smartfaq-web)
 smartfaq-web/node_modules/
 smartfaq-web/.next/
