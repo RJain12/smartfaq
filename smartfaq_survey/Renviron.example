@@ -1,0 +1,2 @@
+# REDIS_URL=redis://127.0.0.1:6379
+# SMARTFAQ_ADMIN_PASSWORD=use-a-long-random-secret

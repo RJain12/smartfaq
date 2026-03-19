@@ -1,0 +1,21 @@
+.DS_Store
+*.pem
+
+# Next.js app (smartfaq-web)
+smartfaq-web/node_modules/
+smartfaq-web/.next/
+smartfaq-web/out/
+smartfaq-web/.data/
+smartfaq-web/.vercel
+smartfaq-web/.env*
+smartfaq-web/npm-debug.log*
+smartfaq-web/.pnpm-debug.log*
+smartfaq-web/*.tsbuildinfo
+smartfaq-web/next-env.d.ts
+
+# R / Shiny app (optional)
+smartfaq_survey/.Renviron
+smartfaq_survey/secrets/
+smartfaq_survey/.Rhistory
+smartfaq_survey/.RData
+smartfaq_survey/.Rproj.user

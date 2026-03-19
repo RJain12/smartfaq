@@ -1,0 +1,7 @@
+.Rhistory
+.RData
+.Rproj.user
+secrets/
+*.json
+!package.json
+Renviron

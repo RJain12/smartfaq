@@ -1,0 +1,41 @@
+export type ClientEvent = {
+  t: string;
+  sessionId: string;
+  formId: string;
+  at: string;
+  detail?: Record<string, unknown>;
+};
+
+export type SurveyResponse = {
+  session_id: string;
+  submitted_at_utc: string;
+  form_id: string;
+  note_id: string;
+  participant_email: string;
+  participant_name: string;
+  consent_acknowledgments_listed: boolean;
+  demo_age: string;
+  demo_race: string;
+  demo_race_other: string;
+  demo_hispanic: string;
+  demo_education: string;
+  demo_healthcare_bg: string;
+  demo_recent_discharge: string;
+  demo_confident_forms: string;
+  demo_digital_comfort: string;
+  demo_caregiver: string;
+  demo_acknowledge_publication: string;
+  hc_understand: number;
+  hc_comfort: number;
+  hc_clarity: number;
+  hc_when_help: number;
+  dc_understand: number;
+  dc_comfort: number;
+  dc_clarity: number;
+  dc_when_help: number;
+  faq_understand: number;
+  faq_comfort: number;
+  faq_clarity: number;
+  faq_when_help: number;
+  faq_unanswered: string;
+};

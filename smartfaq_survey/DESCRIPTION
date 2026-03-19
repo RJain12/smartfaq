@@ -1,0 +1,16 @@
+Package: smartfaq.survey
+Title: SmartFAQs Research Survey (Shiny)
+Version: 0.2.0
+Imports:
+    shiny (>= 1.8.0),
+    bslib (>= 0.6.0),
+    yaml (>= 2.3.0),
+    htmltools,
+    commonmark,
+    redux,
+    jsonlite,
+    digest,
+    httr,
+    ggplot2,
+    dplyr,
+    tidyr

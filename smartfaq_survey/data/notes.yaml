@@ -1,0 +1,156 @@
+# Clinical text for each note id referenced in config.yml under forms.
+# Use YAML literal blocks (|) for multi-line content. You can paste from
+# MIMIC-derived de-identified summaries here; keep PHI out of version control.
+notes:
+  NOTE_001:
+    hospital_course: |
+      Brief hospital course (sample — replace with your note).
+
+      The patient presented with progressive dyspnea and was found to have
+      bilateral lower-extremity edema. Workup suggested fluid overload in the
+      setting of reduced cardiac output. Intravenous diuretics were initiated
+      with improvement in symptoms. Cardiology was consulted; medical therapy
+      was optimized. The patient remained hemodynamically stable, tolerated oral
+      intake, and ambulated with physical therapy prior to discharge.
+    discharge_summary: |
+      Discharge summary (sample — replace with your note).
+
+      Diagnoses: Acute on chronic heart failure with preserved ejection fraction;
+      hypertension; type 2 diabetes mellitus.
+
+      Discharge medications: [List as in your study materials.]
+
+      Follow-up: Cardiology clinic in 7–10 days; primary care in 2 weeks.
+
+      Return precautions: Worsening shortness of breath, new chest pain,
+      fainting, or rapid weight gain.
+    faqs: |
+      **Why was I in the hospital?**
+      You were treated for fluid buildup related to heart strain and needed
+      medications and monitoring until you were stable.
+
+      **What should I do at home?**
+      Take prescribed medicines, limit salt as instructed, and weigh yourself
+      daily if your care team asked you to.
+
+      **When should I seek urgent care?**
+      If breathing becomes much harder, you have new chest pain, you faint,
+      or you gain weight quickly despite following your plan.
+
+  NOTE_002:
+    hospital_course: |
+      Replace with hospital course text for NOTE_002.
+    discharge_summary: |
+      Replace with discharge summary for NOTE_002.
+    faqs: |
+      Replace with SmartFAQs content for NOTE_002.
+
+  NOTE_003:
+    hospital_course: "Replace: hospital course for NOTE_003."
+    discharge_summary: "Replace: discharge summary for NOTE_003."
+    faqs: "Replace: SmartFAQs for NOTE_003."
+
+  NOTE_004:
+    hospital_course: "Replace: hospital course for NOTE_004."
+    discharge_summary: "Replace: discharge summary for NOTE_004."
+    faqs: "Replace: SmartFAQs for NOTE_004."
+
+  NOTE_005:
+    hospital_course: "Replace: hospital course for NOTE_005."
+    discharge_summary: "Replace: discharge summary for NOTE_005."
+    faqs: "Replace: SmartFAQs for NOTE_005."
+
+  NOTE_006:
+    hospital_course: "Replace: hospital course for NOTE_006."
+    discharge_summary: "Replace: discharge summary for NOTE_006."
+    faqs: "Replace: SmartFAQs for NOTE_006."
+
+  NOTE_007:
+    hospital_course: "Replace: hospital course for NOTE_007."
+    discharge_summary: "Replace: discharge summary for NOTE_007."
+    faqs: "Replace: SmartFAQs for NOTE_007."
+
+  NOTE_008:
+    hospital_course: "Replace: hospital course for NOTE_008."
+    discharge_summary: "Replace: discharge summary for NOTE_008."
+    faqs: "Replace: SmartFAQs for NOTE_008."
+
+  NOTE_009:
+    hospital_course: "Replace: hospital course for NOTE_009."
+    discharge_summary: "Replace: discharge summary for NOTE_009."
+    faqs: "Replace: SmartFAQs for NOTE_009."
+
+  NOTE_010:
+    hospital_course: "Replace: hospital course for NOTE_010."
+    discharge_summary: "Replace: discharge summary for NOTE_010."
+    faqs: "Replace: SmartFAQs for NOTE_010."
+
+  NOTE_011:
+    hospital_course: "Replace: hospital course for NOTE_011."
+    discharge_summary: "Replace: discharge summary for NOTE_011."
+    faqs: "Replace: SmartFAQs for NOTE_011."
+
+  NOTE_012:
+    hospital_course: "Replace: hospital course for NOTE_012."
+    discharge_summary: "Replace: discharge summary for NOTE_012."
+    faqs: "Replace: SmartFAQs for NOTE_012."
+
+  NOTE_013:
+    hospital_course: "Replace: hospital course for NOTE_013."
+    discharge_summary: "Replace: discharge summary for NOTE_013."
+    faqs: "Replace: SmartFAQs for NOTE_013."
+
+  NOTE_014:
+    hospital_course: "Replace: hospital course for NOTE_014."
+    discharge_summary: "Replace: discharge summary for NOTE_014."
+    faqs: "Replace: SmartFAQs for NOTE_014."
+
+  NOTE_015:
+    hospital_course: "Replace: hospital course for NOTE_015."
+    discharge_summary: "Replace: discharge summary for NOTE_015."
+    faqs: "Replace: SmartFAQs for NOTE_015."
+
+  NOTE_016:
+    hospital_course: "Replace: hospital course for NOTE_016."
+    discharge_summary: "Replace: discharge summary for NOTE_016."
+    faqs: "Replace: SmartFAQs for NOTE_016."
+
+  NOTE_017:
+    hospital_course: "Replace: hospital course for NOTE_017."
+    discharge_summary: "Replace: discharge summary for NOTE_017."
+    faqs: "Replace: SmartFAQs for NOTE_017."
+
+  NOTE_018:
+    hospital_course: "Replace: hospital course for NOTE_018."
+    discharge_summary: "Replace: discharge summary for NOTE_018."
+    faqs: "Replace: SmartFAQs for NOTE_018."
+
+  NOTE_019:
+    hospital_course: "Replace: hospital course for NOTE_019."
+    discharge_summary: "Replace: discharge summary for NOTE_019."
+    faqs: "Replace: SmartFAQs for NOTE_019."
+
+  NOTE_020:
+    hospital_course: "Replace: hospital course for NOTE_020."
+    discharge_summary: "Replace: discharge summary for NOTE_020."
+    faqs: "Replace: SmartFAQs for NOTE_020."
+
+  NOTE_021:
+    hospital_course: "Replace: hospital course for NOTE_021."
+    discharge_summary: "Replace: discharge summary for NOTE_021."
+    faqs: "Replace: SmartFAQs for NOTE_021."
+
+  NOTE_022:
+    hospital_course: "Replace: hospital course for NOTE_022."
+    discharge_summary: "Replace: discharge summary for NOTE_022."
+    faqs: "Replace: SmartFAQs for NOTE_022."
+
+  NOTE_023:
+    hospital_course: "Replace: hospital course for NOTE_023."
+    discharge_summary: "Replace: discharge summary for NOTE_023."
+    faqs: "Replace: SmartFAQs for NOTE_023."
+
+  NOTE_024:
+    hospital_course: "Replace: hospital course for NOTE_024."
+    discharge_summary: "Replace: discharge summary for NOTE_024."
+    faqs: "Replace: SmartFAQs for NOTE_024."
