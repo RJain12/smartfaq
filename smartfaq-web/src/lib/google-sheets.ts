@@ -2,15 +2,41 @@ import { google } from "googleapis";
 import type { SurveyResponse } from "@/lib/types";
 import { surveyResponseToSheetRow } from "@/lib/row-to-sheet";
 
+function parseServiceAccountJson(raw: string): Record<string, unknown> {
+  let s = raw.trim();
+  // Some dashboards store JSON as a quoted string
+  if (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'"))
+  ) {
+    try {
+      s = JSON.parse(s) as string;
+    } catch {
+      /* use as-is */
+    }
+  }
+  try {
+    let parsed: unknown = JSON.parse(s);
+    if (typeof parsed === "string") {
+      parsed = JSON.parse(parsed);
+    }
+    return parsed as Record<string, unknown>;
+  } catch (e) {
+    throw new Error(
+      `Invalid GOOGLE_SERVICE_ACCOUNT_JSON (must be valid JSON): ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
+}
+
 function getServiceAccountJson(): Record<string, unknown> {
   const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64;
   if (b64?.trim()) {
     const json = Buffer.from(b64.trim(), "base64").toString("utf8");
-    return JSON.parse(json) as Record<string, unknown>;
+    return parseServiceAccountJson(json);
   }
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (raw?.trim()) {
-    return JSON.parse(raw) as Record<string, unknown>;
+    return parseServiceAccountJson(raw);
   }
   throw new Error("Missing GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_JSON_BASE64");
 }

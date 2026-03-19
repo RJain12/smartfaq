@@ -12,6 +12,7 @@ import {
   defaultNoteAnswers,
   getFormNoteIds,
   getNote,
+  noteIdToPatientLabel,
 } from "@/lib/study";
 import {
   DEMO_INTRO,
@@ -71,6 +72,7 @@ function Likert({
   label: React.ReactNode;
   left: string;
   right: string;
+  /** 0 = not yet set; 1–10 = response */
   value: number;
   onChange: (n: number) => void;
   required?: boolean;
@@ -92,18 +94,26 @@ function Likert({
   return (
     <div className="space-y-2">
       <label className="block text-sm font-medium leading-snug text-[#212529]">{fullLabel}</label>
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="max-w-[7rem] text-xs leading-tight text-[#6c757d]">{left}</span>
+      <div className="-mx-0.5 overflow-x-auto px-0.5 pb-0.5">
+        <div className="flex min-w-[min(100%,22rem)] flex-nowrap items-center gap-2 sm:min-w-0">
+        <span className="w-[28%] max-w-[10rem] shrink-0 text-xs leading-snug text-[#6c757d]">{left}</span>
         <input
           type="range"
-          min={1}
+          min={0}
           max={10}
+          step={1}
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="h-2 flex-1 min-w-[8rem] cursor-pointer accent-[#17a2b8]"
+          className="h-2 min-w-0 flex-1 cursor-pointer accent-[#17a2b8]"
+          aria-valuemin={0}
+          aria-valuemax={10}
+          aria-valuenow={value}
         />
-        <span className="max-w-[7rem] text-right text-xs leading-tight text-[#6c757d]">{right}</span>
-        <span className="w-8 text-center text-sm font-semibold tabular-nums text-[#138496]">{value}</span>
+        <span className="w-[28%] max-w-[11rem] shrink-0 text-right text-xs leading-snug text-[#6c757d]">{right}</span>
+        <span className="w-8 shrink-0 text-center text-sm font-semibold tabular-nums text-[#138496]">
+          {value >= 1 && value <= 10 ? value : "—"}
+        </span>
+        </div>
       </div>
     </div>
   );
@@ -139,7 +149,6 @@ function InnerSurvey() {
   const [demo, setDemo] = useState({
     participant_email: "",
     participant_name: "",
-    consent_acknowledgments_listed: false,
     demo_age: "",
     demo_race: "",
     demo_race_other: "",
@@ -239,7 +248,8 @@ function InnerSurvey() {
   const validateNote = (a: NoteAnswers): string[] => {
     const e: string[] = [];
     for (const k of EVAL_FIELDS) {
-      if (a[k] == null || Number.isNaN(a[k])) e.push(k);
+      const v = a[k];
+      if (v == null || Number.isNaN(v) || v < 1 || v > 10) e.push(k);
     }
     if (!a.faq_unanswered || !["Yes", "No"].includes(a.faq_unanswered)) e.push("faq_unanswered");
     return e;
@@ -254,7 +264,7 @@ function InnerSurvey() {
       note_id: noteId,
       participant_email: demo.participant_email,
       participant_name: demo.participant_name,
-      consent_acknowledgments_listed: demo.consent_acknowledgments_listed,
+      consent_acknowledgments_listed: false,
       demo_age: demo.demo_age,
       demo_race: demo.demo_race,
       demo_race_other: demo.demo_race === "Other" ? demo.demo_race_other : "",
@@ -291,7 +301,12 @@ function InnerSurvey() {
         formId,
         detail: { note_id: activeNoteId, n: errs.length },
       });
-      alert("Please complete required fields:\n" + errs.join("\n"));
+      const hasUnsetLikert = errs.some((x) => EVAL_FIELDS.includes(x as (typeof EVAL_FIELDS)[number]));
+      const msg = hasUnsetLikert
+        ? "Please move each rating slider to a value from 1 to 10 (the scale starts unset until you adjust it), answer the follow-up question, and ensure demographics are complete.\n\nDetails:\n" +
+          errs.join("\n")
+        : "Please complete required fields:\n" + errs.join("\n");
+      alert(msg);
       return;
     }
     const row = buildResponse(activeNoteId);
@@ -301,7 +316,14 @@ function InnerSurvey() {
       body: JSON.stringify(row),
     });
     if (!res.ok) {
-      alert("Save failed. Try again.");
+      let msg = "Save failed. Try again.";
+      try {
+        const j = (await res.json()) as { error?: string };
+        if (j.error) msg = `Save failed: ${j.error}`;
+      } catch {
+        /* ignore */
+      }
+      alert(msg);
       return;
     }
     const nextDone = new Set([...completed, activeNoteId]);
@@ -324,7 +346,7 @@ function InnerSurvey() {
   return (
     <div className="min-h-screen bg-[#f8f9fa] text-[#212529]">
       <header className="bg-[#2c3e50] text-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <h1 className="text-base font-semibold tracking-wide sm:text-lg">
             SmartFAQs Survey — Patient Perspective
           </h1>
@@ -342,7 +364,7 @@ function InnerSurvey() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[minmax(280px,380px)_1fr] lg:gap-8 lg:px-6 lg:py-8">
+      <div className="mx-auto grid max-w-[1600px] gap-6 px-4 py-6 lg:grid-cols-[minmax(50%,1fr)_minmax(0,1fr)] lg:gap-8 lg:px-6 lg:py-8">
         {/* Sidebar */}
         <aside className="order-2 space-y-4 lg:order-1">
           <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
@@ -388,18 +410,6 @@ function InnerSurvey() {
                     markTouch("demo:participant_name");
                   }}
                 />
-                <label className="flex items-start gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    className="mt-1 accent-[#17a2b8]"
-                    checked={demo.consent_acknowledgments_listed}
-                    onChange={(e) => {
-                      setDemo((d) => ({ ...d, consent_acknowledgments_listed: e.target.checked }));
-                      markTouch("demo:consent");
-                    }}
-                  />
-                  I consent to be listed in the acknowledgments of the paper.
-                </label>
                 <hr className="border-slate-200" />
                 <p className="text-xs leading-relaxed text-[#6c757d]">{DEMO_INTRO}</p>
                 {/* Simplified: key demo radios as select for space — use native selects where long lists */}
@@ -485,14 +495,16 @@ function InnerSurvey() {
 
             {step === "evaluate" && (
               <div className="space-y-4">
-                <label className="block text-sm font-medium text-[#2c3e50]">Select note</label>
+                <label className="block text-sm font-medium text-[#2c3e50]">Select patient</label>
                 <select
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-mono outline-none focus:border-[#17a2b8] focus:ring-1 focus:ring-[#17a2b8]"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#17a2b8] focus:ring-1 focus:ring-[#17a2b8]"
                   value={activeNoteId}
                   onChange={(e) => setActiveNoteId(e.target.value)}
                 >
                   {noteIds.map((id) => (
-                    <option key={id} value={id}>{id}</option>
+                    <option key={id} value={id}>
+                      {noteIdToPatientLabel(id)}
+                    </option>
                   ))}
                 </select>
                 <div>
@@ -599,7 +611,7 @@ function InnerSurvey() {
               onClick={() => void submitNote()}
               className="w-full rounded-md border border-transparent bg-[#17a2b8] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#138496]"
             >
-              Submit this note ✓
+              Submit this Note ✓
             </button>
           )}
         </aside>
@@ -648,9 +660,19 @@ function InnerSurvey() {
                 </div>
               ) : note ? (
                 <div className="space-y-3">
+                  <div
+                    className="rounded-md border border-[#cfe2ff] bg-[#e7f1ff] px-3 py-2.5 text-sm leading-snug text-[#2c3e50] shadow-sm"
+                    role="status"
+                  >
+                    <strong className="font-semibold">Please read first:</strong> Open each tab below —{" "}
+                    <span className="whitespace-nowrap">Hospital course</span>,{" "}
+                    <span className="whitespace-nowrap">Discharge summary</span>, and{" "}
+                    <span className="whitespace-nowrap">SmartFAQs</span> — before answering the questions in the left
+                    panel.
+                  </div>
                   <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
                     <FileText className="h-5 w-5 text-[#17a2b8]" aria-hidden />
-                    <span className="font-mono text-sm font-semibold text-[#2c3e50]">{activeNoteId}</span>
+                    <span className="text-sm font-semibold text-[#2c3e50]">{noteIdToPatientLabel(activeNoteId)}</span>
                     {completed.has(activeNoteId) && (
                       <span className="rounded border border-[#cfe2ff] bg-[#e7f1ff] px-2 py-0.5 text-xs font-medium text-[#2c3e50]">
                         Submitted

@@ -9,15 +9,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "bad payload" }, { status: 400 });
     }
     await appendResponse(row);
-    await appendEvent({
-      t: "submit_success",
-      sessionId: row.session_id,
-      formId: row.form_id,
-      at: new Date().toISOString(),
-      detail: { note_id: row.note_id },
-    });
+    try {
+      await appendEvent({
+        t: "submit_success",
+        sessionId: row.session_id,
+        formId: row.form_id,
+        at: new Date().toISOString(),
+        detail: { note_id: row.note_id },
+      });
+    } catch (e) {
+      console.error("appendEvent after submit failed (response still saved):", e);
+    }
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "server" }, { status: 500 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "server error";
+    console.error("POST /api/submit:", e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

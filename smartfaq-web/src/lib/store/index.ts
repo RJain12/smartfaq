@@ -39,7 +39,18 @@ export async function appendEvent(e: ClientEvent) {
  */
 export async function appendResponse(row: SurveyResponse) {
   if (googleSheetsConfigured()) {
-    await appendSurveyRowToGoogleSheet(row);
+    try {
+      await appendSurveyRowToGoogleSheet(row);
+    } catch (err) {
+      console.error("Google Sheets append failed:", err);
+      if (useUpstash()) {
+        console.warn("Falling back to Upstash for this submission.");
+        const { appendResponseUpstash } = await import("./upstash-store");
+        await appendResponseUpstash(row);
+        return;
+      }
+      throw err instanceof Error ? err : new Error(String(err));
+    }
     if (useUpstash()) {
       try {
         const { appendResponseUpstash } = await import("./upstash-store");

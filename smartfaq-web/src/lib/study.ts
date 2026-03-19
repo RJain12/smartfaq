@@ -73,6 +73,13 @@ export function getNote(id: string): NoteContent | undefined {
   return NOTES[id];
 }
 
+/** Display label: NOTE_001 → PATIENT 1 (internal IDs unchanged for data / sheets). */
+export function noteIdToPatientLabel(noteId: string): string {
+  const m = /^NOTE_(\d+)$/.exec(noteId);
+  if (m) return `PATIENT ${Number(m[1])}`;
+  return noteId.replace(/_/g, " ");
+}
+
 export const EVAL_FIELDS = [
   "hc_understand",
   "hc_comfort",
@@ -92,9 +99,10 @@ export type EvalField = (typeof EVAL_FIELDS)[number];
 
 export type NoteAnswers = Record<EvalField, number> & { faq_unanswered: string };
 
+/** Likert fields start at 0 = unset; user must move each slider to 1–10 before submit. */
 export function defaultNoteAnswers(): NoteAnswers {
   const o = {} as Record<string, number | string>;
-  for (const k of EVAL_FIELDS) o[k] = 5;
+  for (const k of EVAL_FIELDS) o[k] = 0;
   o.faq_unanswered = "";
   return o as NoteAnswers;
 }
