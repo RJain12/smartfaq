@@ -64,6 +64,36 @@ const DEMO_RACE = [
   "Other",
 ] as const;
 
+const DEMO_REQUIRED_KEYS = [
+  "demo_age",
+  "demo_race",
+  "demo_hispanic",
+  "demo_education",
+  "demo_healthcare_bg",
+  "demo_recent_discharge",
+  "demo_confident_forms",
+  "demo_digital_comfort",
+  "demo_caregiver",
+  "demo_acknowledge_publication",
+] as const;
+
+/** Human-readable labels for validation (match form wording). */
+const DEMO_REQUIRED_LABELS: Record<(typeof DEMO_REQUIRED_KEYS)[number], string> = {
+  demo_age: "How old are you?",
+  demo_race: "How do you describe your race?",
+  demo_hispanic: "Do you identify as Hispanic, Latino/a, or of Spanish origin?",
+  demo_education: "What is the highest level of education you have completed?",
+  demo_healthcare_bg: "Do you have a medical or healthcare background?",
+  demo_recent_discharge:
+    "Have you been discharged from a hospital or emergency department in the past 6 months?",
+  demo_confident_forms: "How confident are you filling out medical forms on your own?",
+  demo_digital_comfort:
+    "How comfortable are you using digital tools (apps, websites, patient portals) to manage your health?",
+  demo_caregiver: "Do you currently help manage healthcare for a family member or loved one?",
+  demo_acknowledge_publication:
+    "Would you be comfortable being acknowledged (by name) for your contributions in future publications resulting from this work?",
+};
+
 function useSessionId() {
   const [id, setId] = useState<string | null>(null);
   useEffect(() => {
@@ -156,6 +186,19 @@ function InnerSurvey() {
   const [lastSubmitStored, setLastSubmitStored] = useState<string | null>(null);
   const submitFeedbackRef = useRef<HTMLDivElement>(null);
   const patientSelectRef = useRef<HTMLSelectElement>(null);
+  const demographicsScrollRef = useRef<HTMLDivElement>(null);
+
+  /** After answering a demographic dropdown, nudge the panel down so the next questions come into view. */
+  const nudgeDemographicsScroll = useCallback(() => {
+    requestAnimationFrame(() => {
+      const el = demographicsScrollRef.current;
+      if (!el) return;
+      const room = el.scrollHeight - el.clientHeight - el.scrollTop;
+      if (room > 4) {
+        el.scrollBy({ top: Math.min(100, room), behavior: "smooth" });
+      }
+    });
+  }, []);
 
   const markTouch = useCallback(
     (qkey: string) => {
@@ -257,23 +300,21 @@ function InnerSurvey() {
   const validateDemo = (): string[] => {
     const e: string[] = [];
     if (!demo.participant_email.trim()) e.push("Email is required.");
-    const req = [
-      "demo_age",
-      "demo_race",
-      "demo_hispanic",
-      "demo_education",
-      "demo_healthcare_bg",
-      "demo_recent_discharge",
-      "demo_confident_forms",
-      "demo_digital_comfort",
-      "demo_caregiver",
-      "demo_acknowledge_publication",
-    ] as const;
-    for (const k of req) {
-      if (!String(demo[k]).trim()) e.push(`Missing: ${k}`);
+    let anyDemoMissing = false;
+    for (const k of DEMO_REQUIRED_KEYS) {
+      if (!String(demo[k]).trim()) {
+        anyDemoMissing = true;
+        e.push(`• ${DEMO_REQUIRED_LABELS[k]}`);
+      }
     }
     if (demo.demo_race === "Other" && !demo.demo_race_other.trim()) {
-      e.push("Specify race (Other).");
+      e.push("• Please specify your race (Other).");
+      anyDemoMissing = true;
+    }
+    if (anyDemoMissing) {
+      e.push(
+        "\nScroll down in the demographics panel on the left if you don’t see all of these — more questions are below."
+      );
     }
     return e;
   };
@@ -441,8 +482,14 @@ function InnerSurvey() {
             )}
 
             {step === "demographics" && (
-              <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+              <div
+                ref={demographicsScrollRef}
+                className="demographics-scroll max-h-[70vh] space-y-4 pr-1"
+              >
                 <h2 className="text-sm font-semibold text-[#2c3e50]">Your information</h2>
+                <p className="rounded-md border border-[#cfe2ff] bg-[#f1f6ff] px-2.5 py-2 text-xs leading-snug text-[#2c3e50]">
+                  <strong>Scroll down</strong> in this box to see every required question — there are more below your first answers.
+                </p>
                 <input
                   className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#17a2b8] focus:ring-1 focus:ring-[#17a2b8]"
                   placeholder="Email *"
@@ -474,6 +521,7 @@ function InnerSurvey() {
                     onChange={(e) => {
                       setDemo((d) => ({ ...d, demo_age: e.target.value }));
                       markTouch("demo:demo_age");
+                      nudgeDemographicsScroll();
                     }}
                   >
                     <option value="">Select…</option>
@@ -490,6 +538,7 @@ function InnerSurvey() {
                     onChange={(e) => {
                       setDemo((d) => ({ ...d, demo_race: e.target.value }));
                       markTouch("demo:demo_race");
+                      nudgeDemographicsScroll();
                     }}
                   >
                     <option value="">Select…</option>
@@ -531,6 +580,7 @@ function InnerSurvey() {
                           const v = e.target.value;
                           setDemo((d) => ({ ...d, [key]: v }));
                           markTouch(`demo:${key}`);
+                          nudgeDemographicsScroll();
                         }}
                       >
                         <option value="">Select…</option>
@@ -726,6 +776,10 @@ function InnerSurvey() {
               <p className="mt-2 text-sm leading-relaxed">
                 Please complete the questions in the <strong>left panel</strong>. Fields marked <span className="text-red-600">*</span> are
                 required before you can proceed to the clinical materials.
+              </p>
+              <p className="mx-auto mt-4 max-w-md text-sm font-medium leading-relaxed text-[#2c3e50]">
+                Scroll down in that left panel to see and complete <strong>all</strong> questions — several required items are below the first
+                screenful.
               </p>
             </div>
           )}
