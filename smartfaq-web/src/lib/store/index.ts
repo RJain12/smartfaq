@@ -31,42 +31,52 @@ export async function appendEvent(e: ClientEvent) {
   await appendEventFile(e);
 }
 
+/** Where the row was written (for client messaging / debugging). */
+export type ResponseStorage =
+  | "google_sheets"
+  | "google_sheets_plus_kv"
+  | "upstash_sheet_failed"
+  | "upstash_only"
+  | "local_file";
+
 /**
  * Persists one submission. Priority:
  * 1) Google Sheets (if `GOOGLE_SHEETS_SPREADSHEET_ID` + service account JSON env are set)
  * 2) else Upstash Redis (optional analytics / backup)
  * 3) else local file (dev only)
  */
-export async function appendResponse(row: SurveyResponse) {
+export async function appendResponse(row: SurveyResponse): Promise<ResponseStorage> {
   if (googleSheetsConfigured()) {
     try {
       await appendSurveyRowToGoogleSheet(row);
+      if (useUpstash()) {
+        try {
+          const { appendResponseUpstash } = await import("./upstash-store");
+          await appendResponseUpstash(row);
+        } catch {
+          /* optional mirror */
+        }
+        return "google_sheets_plus_kv";
+      }
+      return "google_sheets";
     } catch (err) {
       console.error("Google Sheets append failed:", err);
       if (useUpstash()) {
         console.warn("Falling back to Upstash for this submission.");
         const { appendResponseUpstash } = await import("./upstash-store");
         await appendResponseUpstash(row);
-        return;
+        return "upstash_sheet_failed";
       }
       throw err instanceof Error ? err : new Error(String(err));
     }
-    if (useUpstash()) {
-      try {
-        const { appendResponseUpstash } = await import("./upstash-store");
-        await appendResponseUpstash(row);
-      } catch {
-        /* optional mirror */
-      }
-    }
-    return;
   }
   if (useUpstash()) {
     const { appendResponseUpstash } = await import("./upstash-store");
     await appendResponseUpstash(row);
-    return;
+    return "upstash_only";
   }
   await appendResponseFile(row);
+  return "local_file";
 }
 
 /** Admin reads events/responses from Upstash or local files — not from the Sheet API. */

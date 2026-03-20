@@ -29,7 +29,7 @@ Open [http://localhost:3000](http://localhost:3000). Use `?form=1` … `?form=5`
 | `GOOGLE_SHEETS_SPREADSHEET_ID` | ID from the spreadsheet URL |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Full JSON string of the service account key (or use base64 below) |
 | `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` | Alternative: base64-encoded JSON (if raw JSON is awkward in the dashboard) |
-| `GOOGLE_SHEETS_APPEND_RANGE` | Optional, default `Sheet1!A1` — tab and start cell for `spreadsheets.values.append` |
+| `GOOGLE_SHEETS_APPEND_RANGE` | Optional, default `Sheet1!A1` — **must match your tab’s exact name** (e.g. `Form Responses!A1`). If the tab isn’t named `Sheet1`, the API can fail silently into backup storage — check Vercel logs. |
 
 Add a header row once so columns align (see `SHEET_HEADER_ROW` in `src/lib/row-to-sheet.ts`).
 

@@ -28,6 +28,23 @@ import { trackClient } from "@/components/track";
 
 type Step = "intro" | "demographics" | "evaluate" | "thanks";
 
+function storageFeedbackLine(stored: string): string {
+  switch (stored) {
+    case "google_sheets":
+      return "Saved to the study Google Sheet.";
+    case "google_sheets_plus_kv":
+      return "Saved to the Google Sheet (and a backup copy).";
+    case "upstash_sheet_failed":
+      return "The Google Sheet could not be updated — your response was saved to backup storage only. If rows never appear in the Sheet, ask the study team to check the Sheet tab name (GOOGLE_SHEETS_APPEND_RANGE), sharing with the service account, and Vercel logs.";
+    case "upstash_only":
+      return "Saved to backup storage (Google Sheet is not configured on the server).";
+    case "local_file":
+      return "Saved locally (development mode).";
+    default:
+      return "Response recorded.";
+  }
+}
+
 const DEMO_AGE = [
   "18–30 years",
   "30–40 years",
@@ -131,6 +148,14 @@ function InnerSurvey() {
   const [completed, setCompleted] = useState<Set<string>>(() => new Set());
   const [answersByNote, setAnswersByNote] = useState<Record<string, NoteAnswers>>({});
   const touched = useRef<Set<string>>(new Set());
+  const [submitFeedback, setSubmitFeedback] = useState<{
+    stored: string;
+    patientLabel: string;
+    remaining: number;
+  } | null>(null);
+  const [lastSubmitStored, setLastSubmitStored] = useState<string | null>(null);
+  const submitFeedbackRef = useRef<HTMLDivElement>(null);
+  const patientSelectRef = useRef<HTMLSelectElement>(null);
 
   const markTouch = useCallback(
     (qkey: string) => {
@@ -218,6 +243,14 @@ function InnerSurvey() {
   useEffect(() => {
     setActiveNoteId((cur) => (noteIds.includes(cur) ? cur : noteIds[0] ?? cur));
   }, [noteIds]);
+
+  useEffect(() => {
+    if (!submitFeedback || step !== "evaluate") return;
+    submitFeedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    requestAnimationFrame(() => {
+      patientSelectRef.current?.focus();
+    });
+  }, [submitFeedback, step]);
 
   const note = getNote(activeNoteId);
 
@@ -326,9 +359,27 @@ function InnerSurvey() {
       alert(msg);
       return;
     }
+    let data: { stored?: string } = {};
+    try {
+      data = (await res.json()) as { stored?: string };
+    } catch {
+      /* ignore */
+    }
+    const stored = data.stored ?? "unknown";
     const nextDone = new Set([...completed, activeNoteId]);
+    const remaining = noteIds.length - nextDone.size;
     setCompleted(nextDone);
-    if (nextDone.size >= noteIds.length) setStep("thanks");
+    setLastSubmitStored(stored);
+    if (nextDone.size >= noteIds.length) {
+      setSubmitFeedback(null);
+      setStep("thanks");
+      return;
+    }
+    setSubmitFeedback({
+      stored,
+      patientLabel: noteIdToPatientLabel(activeNoteId),
+      remaining,
+    });
   };
 
   const doneCount = completed.size;
@@ -495,11 +546,49 @@ function InnerSurvey() {
 
             {step === "evaluate" && (
               <div className="space-y-4">
-                <label className="block text-sm font-medium text-[#2c3e50]">Select patient</label>
+                {submitFeedback && (
+                  <div
+                    ref={submitFeedbackRef}
+                    className="sticky top-2 z-20 rounded-md border border-green-600/30 bg-green-50 p-3 text-sm text-[#155724] shadow-sm ring-1 ring-green-600/10"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <div className="flex gap-2">
+                      <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-700" aria-hidden />
+                      <div className="min-w-0 space-y-1.5">
+                        <p className="font-semibold text-[#155724]">
+                          Submitted: {submitFeedback.patientLabel}
+                        </p>
+                        <p className="leading-snug text-green-900/90">{storageFeedbackLine(submitFeedback.stored)}</p>
+                        {submitFeedback.remaining > 0 ? (
+                          <p className="font-medium text-[#155724]">
+                            Next: use <span className="whitespace-nowrap">Select patient</span> above to choose another
+                            note — you have {submitFeedback.remaining} left in this form.
+                          </p>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setSubmitFeedback(null)}
+                          className="mt-1 text-xs font-medium text-green-800 underline decoration-green-700/50 hover:text-green-950"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <label className="block text-sm font-medium text-[#2c3e50]" htmlFor="patient-select">
+                  Select patient
+                </label>
                 <select
-                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#17a2b8] focus:ring-1 focus:ring-[#17a2b8]"
+                  id="patient-select"
+                  ref={patientSelectRef}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-[#17a2b8] focus:ring-2 focus:ring-[#17a2b8]/40"
                   value={activeNoteId}
-                  onChange={(e) => setActiveNoteId(e.target.value)}
+                  onChange={(e) => {
+                    setActiveNoteId(e.target.value);
+                    setSubmitFeedback(null);
+                  }}
                 >
                   {noteIds.map((id) => (
                     <option key={id} value={id}>
@@ -555,7 +644,7 @@ function InnerSurvey() {
                         <label key={x} className="flex cursor-pointer items-center gap-2 text-sm">
                           <input
                             type="radio"
-                            name="faq_unanswered"
+                            name={`faq_unanswered_${activeNoteId}`}
                             className="accent-[#17a2b8]"
                             checked={getAnswers(activeNoteId).faq_unanswered === x}
                             onChange={() => {
@@ -569,6 +658,13 @@ function InnerSurvey() {
                     </div>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void submitNote()}
+                  className="w-full rounded-md border border-transparent bg-[#17a2b8] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#138496]"
+                >
+                  Submit this Note ✓
+                </button>
               </div>
             )}
           </div>
@@ -604,16 +700,6 @@ function InnerSurvey() {
               Next section <ChevronRight className="h-4 w-4" aria-hidden />→
             </button>
           </div>
-
-          {step === "evaluate" && (
-            <button
-              type="button"
-              onClick={() => void submitNote()}
-              className="w-full rounded-md border border-transparent bg-[#17a2b8] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#138496]"
-            >
-              Submit this Note ✓
-            </button>
-          )}
         </aside>
 
         {/* Main reader */}
@@ -651,6 +737,12 @@ function InnerSurvey() {
                   <CheckCircle2 className="mx-auto h-14 w-14 text-[#17a2b8]" strokeWidth={1.25} aria-hidden />
                   <h2 className="mt-4 text-xl font-semibold text-[#2c3e50]">Thanks for completing the survey</h2>
                   <p className="mt-2 text-sm text-[#6c757d]">Your responses have been recorded. You may close this window.</p>
+                  {lastSubmitStored && (
+                    <p className="mx-auto mt-4 max-w-lg text-left text-sm leading-relaxed text-[#495057]">
+                      <strong className="text-[#2c3e50]">Where your answers were saved:</strong>{" "}
+                      {storageFeedbackLine(lastSubmitStored)}
+                    </p>
+                  )}
                   <Link
                     href="/"
                     className="mt-6 inline-block text-sm font-medium text-[#138496] underline decoration-[#17a2b8] underline-offset-2 hover:text-[#117a8b]"
