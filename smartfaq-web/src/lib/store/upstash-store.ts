@@ -26,7 +26,7 @@ export async function appendResponseUpstash(row: SurveyResponse) {
   await r.hincrby(`${PREFIX}:stats:submissions_by_note`, row.note_id, 1);
 }
 
-export async function readEventsUpstash(max = 8000): Promise<ClientEvent[]> {
+export async function readEventsUpstash(max = 40_000): Promise<ClientEvent[]> {
   const r = redis();
   const lines = await r.lrange(`${PREFIX}:events`, 0, max - 1);
   if (!lines) return [];
@@ -41,7 +41,7 @@ export async function readEventsUpstash(max = 8000): Promise<ClientEvent[]> {
     .filter((x): x is ClientEvent => x != null);
 }
 
-export async function readResponsesUpstash(max = 2000): Promise<SurveyResponse[]> {
+export async function readResponsesUpstash(max = 40_000): Promise<SurveyResponse[]> {
   const r = redis();
   const lines = await r.lrange(`${PREFIX}:responses`, 0, max - 1);
   if (!lines) return [];

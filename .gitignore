@@ -1,6 +1,9 @@
 .DS_Store
 *.pem
 
+# Root-level npm (e.g. one-off scripts); do not commit dependencies here
+/node_modules/
+
 # Vercel (local link — do not commit)
 /.vercel/
 /.env.local

@@ -91,27 +91,24 @@ export function storageInfo() {
   };
 }
 
+/** All responses available in this environment (for CSV export). */
+export async function loadResponsesForExport() {
+  if (useUpstash()) {
+    const { readResponsesUpstash } = await import("./upstash-store");
+    return readResponsesUpstash(50_000);
+  }
+  return readAllResponses();
+}
+
 export async function loadAnalytics() {
   if (useUpstash()) {
-    const {
-      readEventsUpstash,
-      readResponsesUpstash,
-      readSubmitCountsUpstash,
-    } = await import("./upstash-store");
-    const [events, responses, submitCounts] = await Promise.all([
-      readEventsUpstash(),
-      readResponsesUpstash(),
-      readSubmitCountsUpstash(),
+    const { readEventsUpstash, readResponsesUpstash } = await import("./upstash-store");
+    const [events, responses] = await Promise.all([
+      readEventsUpstash(50_000),
+      readResponsesUpstash(50_000),
     ]);
-    return { events, responses, submitCounts };
+    return { events, responses };
   }
-  const [events, responses] = await Promise.all([
-    readAllEvents(),
-    readAllResponses(),
-  ]);
-  const submitCounts: Record<string, number> = {};
-  for (const r of responses) {
-    submitCounts[r.note_id] = (submitCounts[r.note_id] ?? 0) + 1;
-  }
-  return { events, responses, submitCounts };
+  const [events, responses] = await Promise.all([readAllEvents(), readAllResponses()]);
+  return { events, responses };
 }

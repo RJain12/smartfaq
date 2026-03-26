@@ -9,12 +9,37 @@ function uniqSessions(events: ClientEvent[], predicate: (e: ClientEvent) => bool
   return s.size;
 }
 
-export function buildAdminStats(
-  events: ClientEvent[],
-  responses: SurveyResponse[],
-  submitCounts: Record<string, number>
-) {
+function submitDestinationLabel(key: string): string {
+  switch (key) {
+    case "google_sheets":
+      return "Google Sheet";
+    case "google_sheets_plus_kv":
+      return "Sheet + KV mirror";
+    case "upstash_sheet_failed":
+      return "KV only (Sheet failed)";
+    case "upstash_only":
+      return "KV only (no Sheet)";
+    case "local_file":
+      return "Local file (dev)";
+    default:
+      return key || "Unknown";
+  }
+}
+
+/** Derive counts from the loaded response rows (source of truth for this dashboard). */
+function deriveSubmitCounts(responses: SurveyResponse[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const r of responses) {
+    const id = r.note_id ?? "";
+    if (!id) continue;
+    out[id] = (out[id] ?? 0) + 1;
+  }
+  return out;
+}
+
+export function buildAdminStats(events: ClientEvent[], responses: SurveyResponse[]) {
   const sessions = new Set(events.map((e) => e.sessionId));
+  const submitCounts = deriveSubmitCounts(responses);
 
   const funnel = {
     connected: uniqSessions(events, (e) => e.t === "session_start"),
@@ -75,22 +100,50 @@ export function buildAdminStats(
     for (const item of likertKeys) {
       const vals = rows
         .map((x) => Number((x as unknown as Record<string, number>)[item]))
-        .filter((v) => !Number.isNaN(v));
+        .filter((v) => !Number.isNaN(v) && v >= 1 && v <= 10);
       if (vals.length === 0) continue;
       const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
       likertMeans.push({ note_id, item, mean, n: vals.length });
     }
   }
+  likertMeans.sort((a, b) => a.note_id.localeCompare(b.note_id) || a.item.localeCompare(b.item));
+
+  const submissionsByForm: Record<string, number> = {};
+  for (const r of responses) {
+    const fid = String(r.form_id ?? "");
+    if (!fid) continue;
+    submissionsByForm[fid] = (submissionsByForm[fid] ?? 0) + 1;
+  }
+
+  const submitDestinationCounts: { key: string; label: string; count: number }[] = [];
+  const destMap: Record<string, number> = {};
+  for (const e of events) {
+    if (e.t !== "submit_success") continue;
+    const raw = String(e.detail?.stored ?? "unknown");
+    destMap[raw] = (destMap[raw] ?? 0) + 1;
+  }
+  for (const [key, count] of Object.entries(destMap).sort((a, b) => b[1] - a[1])) {
+    submitDestinationCounts.push({ key, label: submitDestinationLabel(key), count });
+  }
+
+  const uniqueSessionsWithSubmit = new Set(responses.map((r) => r.session_id).filter(Boolean)).size;
+
+  const recentResponses = [...responses]
+    .sort((a, b) => new Date(b.submitted_at_utc).getTime() - new Date(a.submitted_at_utc).getTime())
+    .slice(0, 60);
 
   return {
     totalEventSessions: sessions.size,
     responseCount: responses.length,
+    uniqueSessionsWithSubmit,
     funnel,
     deviceCounts,
     countryCounts,
     qTouch,
     submitCounts,
+    submissionsByForm,
+    submitDestinationCounts,
     likertMeans,
-    recentResponses: responses.slice(-40).reverse(),
+    recentResponses,
   };
 }

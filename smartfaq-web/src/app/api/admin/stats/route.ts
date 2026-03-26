@@ -10,7 +10,11 @@ export async function GET() {
   if (!verifyAdminToken(tok)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const { events, responses, submitCounts } = await loadAnalytics();
-  const stats = buildAdminStats(events, responses, submitCounts);
-  return NextResponse.json({ ...stats, storage: storageInfo() });
+  const { events, responses } = await loadAnalytics();
+  const stats = buildAdminStats(events, responses);
+  return NextResponse.json({
+    ...stats,
+    storage: storageInfo(),
+    generatedAt: new Date().toISOString(),
+  });
 }
