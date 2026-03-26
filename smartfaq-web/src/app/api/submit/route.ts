@@ -4,10 +4,14 @@ import type { SurveyResponse } from "@/lib/types";
 
 export async function POST(req: Request) {
   try {
-    const row = (await req.json()) as SurveyResponse;
-    if (!row.session_id || !row.note_id || !row.form_id) {
+    const raw = (await req.json()) as SurveyResponse;
+    const form_id = String(raw.form_id ?? "").trim() || "1";
+    const session_id = String(raw.session_id ?? "").trim();
+    const note_id = String(raw.note_id ?? "").trim();
+    if (!session_id || !note_id) {
       return NextResponse.json({ error: "bad payload" }, { status: 400 });
     }
+    const row: SurveyResponse = { ...raw, form_id, session_id, note_id };
     const stored = await appendResponse(row);
     try {
       await appendEvent({

@@ -21,6 +21,7 @@ import {
   HC_LIKERT,
   INTRO_BULLETS,
   INTRO_PARAGRAPHS,
+  INTRO_SESSION_NOTICE,
 } from "@/lib/survey-copy";
 import type { SurveyResponse } from "@/lib/types";
 import { trackClient } from "@/components/track";
@@ -151,7 +152,8 @@ function Likert({
 
 function InnerSurvey() {
   const search = useSearchParams();
-  const formId = search.get("form") ?? DEFAULT_FORM;
+  /** Empty `?form=` must not yield "" (server used to reject falsy form_id → 400 bad payload). */
+  const formId = (search.get("form") ?? "").trim() || DEFAULT_FORM;
   const noteIds = useMemo(() => getFormNoteIds(formId), [formId]);
   const sessionId = useSessionId();
 
@@ -364,6 +366,12 @@ function InnerSurvey() {
       alert(msg);
       return;
     }
+    if (!sessionId?.trim() || !formId) {
+      alert(
+        "The survey session could not be started in this browser (e.g. storage blocked). Try refreshing the page, or open the link in another browser."
+      );
+      return;
+    }
     const row = buildResponse(activeNoteId);
     const res = await fetch("/api/submit", {
       method: "POST",
@@ -371,12 +379,21 @@ function InnerSurvey() {
       body: JSON.stringify(row),
     });
     if (!res.ok) {
-      let msg = "Save failed. Try again.";
+      let msg =
+        "We couldn’t save your response. Please try again in a moment, or contact the study team if this keeps happening.";
       try {
         const j = (await res.json()) as { error?: string };
-        if (j.error) msg = `Save failed: ${j.error}`;
+        const err = j.error ?? "";
+        if (res.status === 400 && (err === "bad payload" || err.includes("bad payload"))) {
+          msg =
+            "Something went wrong with the survey session or link. Try refreshing the page, or open the study link again (avoid an empty ?form= in the URL).";
+        } else if (res.status >= 500 && err) {
+          msg = `The server could not save your response (${err}). Please try again later or contact the study team.`;
+        } else if (err) {
+          msg = `Save failed: ${err}`;
+        }
       } catch {
-        /* ignore */
+        /* keep default */
       }
       alert(msg);
       return;
@@ -434,8 +451,10 @@ function InnerSurvey() {
       </header>
 
       <div className="mx-auto grid max-w-[1600px] gap-6 px-4 py-6 lg:grid-cols-[minmax(50%,1fr)_minmax(0,1fr)] lg:gap-8 lg:px-6 lg:py-8">
-        {/* Sidebar */}
-        <aside className="order-2 space-y-4 lg:order-1">
+        {/* Sidebar: on Notes step, evaluation panel moves to the right (lg:order-2). */}
+        <aside
+          className={`order-2 space-y-4 ${step === "evaluate" ? "lg:order-2" : "lg:order-1"}`}
+        >
           <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
             <nav className="mb-4 flex flex-wrap gap-1.5 text-xs font-medium text-[#6c757d]">
               <span className={step === "intro" ? "font-semibold text-[#2c3e50]" : ""}>Intro</span>
@@ -729,11 +748,14 @@ function InnerSurvey() {
           </div>
         </aside>
 
-        {/* Main reader */}
-        <main className="order-1 lg:order-2">
+        {/* Main reader: on Notes step, clinical materials are on the left (lg:order-1). */}
+        <main className={`order-1 ${step === "evaluate" ? "lg:order-1" : "lg:order-2"}`}>
           {step === "intro" && (
             <article className="rounded-md border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
               <h2 className="text-xl font-semibold text-[#2c3e50]">About this survey</h2>
+              <p className="mt-4 rounded-md border border-[#cfe2ff] bg-[#f1f6ff] px-3 py-2.5 text-sm font-medium leading-snug text-[#2c3e50]">
+                {INTRO_SESSION_NOTICE}
+              </p>
               <div className="prose prose-slate mt-5 max-w-none prose-p:text-[#495057] prose-li:text-[#495057] prose-headings:text-[#2c3e50]">
                 {INTRO_PARAGRAPHS.map((p) => (
                   <p key={p}>{p}</p>
@@ -784,7 +806,7 @@ function InnerSurvey() {
                     <strong className="font-semibold">Please read first:</strong> Open each tab below —{" "}
                     <span className="whitespace-nowrap">Hospital course</span>,{" "}
                     <span className="whitespace-nowrap">Discharge summary</span>, and{" "}
-                    <span className="whitespace-nowrap">SmartFAQs</span> — before answering the questions in the left
+                    <span className="whitespace-nowrap">SmartFAQs</span> — before answering the questions in the right
                     panel.
                   </div>
                   <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-2.5 shadow-sm">

@@ -33,6 +33,8 @@ Open [http://localhost:3000](http://localhost:3000). Use `?form=1` … `?form=4`
 
 Add a header row once so columns align (see `SHEET_HEADER_ROW` in `src/lib/row-to-sheet.ts`). The **`form_id`** column (3rd column, after `session_id` and `submitted_at_utc`) stores which survey version the participant used (`1`–`4`), so you can filter or pivot in the spreadsheet.
 
+**Vercel checklist (so submits save in production):** set the Google env vars above; confirm the sheet is shared with the service account; `GOOGLE_SHEETS_APPEND_RANGE` matches the tab name; optionally set Upstash so the admin dashboard shows rows and failed Sheet appends can fall back.
+
 ### Admin dashboard + Sheets
 
 The **admin** page reads analytics from **Upstash** or **local files**, not from the Sheets API. If you use **Sheets only** (no Upstash), submissions still save to the spreadsheet, but **saved response counts / recent rows here will stay empty**. Set Upstash vars to mirror each submission into Redis for this dashboard, or analyze in Google Sheets.

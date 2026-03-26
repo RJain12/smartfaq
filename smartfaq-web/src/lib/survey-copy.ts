@@ -7,10 +7,15 @@ export const INTRO_PARAGRAPHS = [
 ] as const;
 
 export const INTRO_BULLETS = [
-  "The survey should take about 15–20 minutes to complete.",
+  "Set aside at least about 20 minutes in one sitting before you start — the full survey is easier to complete without interruption.",
+  "Your answers for each patient note are only saved when you click “Submit this Note.” Closing the tab or leaving before that will lose that note’s responses (there is no autosave).",
   "Your responses will help guide future improvements to patient-centered health communication tools.",
   "Participation is voluntary. You may skip any question or stop at any time.",
 ] as const;
+
+/** Highlight box on the intro screen (time + no partial save). */
+export const INTRO_SESSION_NOTICE =
+  "Only start when you have about 20 minutes. Progress is not saved until you submit each patient note — if you leave or close the browser before clicking “Submit this Note,” that note’s answers are lost.";
 
 export const DEMO_INTRO =
   "We ask the following demographic questions to better understand whether SmartFAQs are helpful across diverse populations.";
