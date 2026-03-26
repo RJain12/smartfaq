@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Use `?form=1` … `?form=5` to pick a form.
+Open [http://localhost:3000](http://localhost:3000). Use `?form=1` … `?form=4` to pick a form (each form is a different patient set).
 
 - **Admin**: [http://localhost:3000/admin](http://localhost:3000/admin) — default password `aditya` (override with `SMARTFAQ_ADMIN_PASSWORD`). Set `ADMIN_SESSION_SECRET` for production cookies.
 
@@ -31,7 +31,7 @@ Open [http://localhost:3000](http://localhost:3000). Use `?form=1` … `?form=5`
 | `GOOGLE_SERVICE_ACCOUNT_JSON_BASE64` | Alternative: base64-encoded JSON (if raw JSON is awkward in the dashboard) |
 | `GOOGLE_SHEETS_APPEND_RANGE` | Optional, default `Sheet1!A1` — **must match your tab’s exact name** (e.g. `Form Responses!A1`). If the tab isn’t named `Sheet1`, the API can fail silently into backup storage — check Vercel logs. |
 
-Add a header row once so columns align (see `SHEET_HEADER_ROW` in `src/lib/row-to-sheet.ts`).
+Add a header row once so columns align (see `SHEET_HEADER_ROW` in `src/lib/row-to-sheet.ts`). The **`form_id`** column (3rd column, after `session_id` and `submitted_at_utc`) stores which survey version the participant used (`1`–`4`), so you can filter or pivot in the spreadsheet.
 
 ### Admin dashboard + Sheets
 

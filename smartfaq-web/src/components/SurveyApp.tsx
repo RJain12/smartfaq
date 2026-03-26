@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import ReactMarkdown from "react-markdown";
 import { FileText, LayoutList, MessageCircleQuestion, ChevronRight, ChevronLeft, CheckCircle2 } from "lucide-react";
 import {
   DEFAULT_FORM,
@@ -25,25 +24,9 @@ import {
 } from "@/lib/survey-copy";
 import type { SurveyResponse } from "@/lib/types";
 import { trackClient } from "@/components/track";
+import { SmartFaqAccordion } from "@/components/SmartFaqAccordion";
 
 type Step = "intro" | "demographics" | "evaluate" | "thanks";
-
-function storageFeedbackLine(stored: string): string {
-  switch (stored) {
-    case "google_sheets":
-      return "Saved to the study Google Sheet.";
-    case "google_sheets_plus_kv":
-      return "Saved to the Google Sheet (and a backup copy).";
-    case "upstash_sheet_failed":
-      return "The Google Sheet could not be updated — your response was saved to backup storage only. If rows never appear in the Sheet, ask the study team to check the Sheet tab name (GOOGLE_SHEETS_APPEND_RANGE), sharing with the service account, and Vercel logs.";
-    case "upstash_only":
-      return "Saved to backup storage (Google Sheet is not configured on the server).";
-    case "local_file":
-      return "Saved locally (development mode).";
-    default:
-      return "Response recorded.";
-  }
-}
 
 const DEMO_AGE = [
   "18–30 years",
@@ -179,11 +162,9 @@ function InnerSurvey() {
   const [answersByNote, setAnswersByNote] = useState<Record<string, NoteAnswers>>({});
   const touched = useRef<Set<string>>(new Set());
   const [submitFeedback, setSubmitFeedback] = useState<{
-    stored: string;
     patientLabel: string;
     remaining: number;
   } | null>(null);
-  const [lastSubmitStored, setLastSubmitStored] = useState<string | null>(null);
   const submitFeedbackRef = useRef<HTMLDivElement>(null);
   const patientSelectRef = useRef<HTMLSelectElement>(null);
   const demographicsScrollRef = useRef<HTMLDivElement>(null);
@@ -400,24 +381,20 @@ function InnerSurvey() {
       alert(msg);
       return;
     }
-    let data: { stored?: string } = {};
     try {
-      data = (await res.json()) as { stored?: string };
+      await res.json();
     } catch {
       /* ignore */
     }
-    const stored = data.stored ?? "unknown";
     const nextDone = new Set([...completed, activeNoteId]);
     const remaining = noteIds.length - nextDone.size;
     setCompleted(nextDone);
-    setLastSubmitStored(stored);
     if (nextDone.size >= noteIds.length) {
       setSubmitFeedback(null);
       setStep("thanks");
       return;
     }
     setSubmitFeedback({
-      stored,
       patientLabel: noteIdToPatientLabel(activeNoteId),
       remaining,
     });
@@ -609,7 +586,7 @@ function InnerSurvey() {
                         <p className="font-semibold text-[#155724]">
                           Submitted: {submitFeedback.patientLabel}
                         </p>
-                        <p className="leading-snug text-green-900/90">{storageFeedbackLine(submitFeedback.stored)}</p>
+                        <p className="leading-snug text-green-900/90">Your response was saved successfully.</p>
                         {submitFeedback.remaining > 0 ? (
                           <p className="font-medium text-[#155724]">
                             Next: use <span className="whitespace-nowrap">Select patient</span> above to choose another
@@ -791,12 +768,6 @@ function InnerSurvey() {
                   <CheckCircle2 className="mx-auto h-14 w-14 text-[#17a2b8]" strokeWidth={1.25} aria-hidden />
                   <h2 className="mt-4 text-xl font-semibold text-[#2c3e50]">Thanks for completing the survey</h2>
                   <p className="mt-2 text-sm text-[#6c757d]">Your responses have been recorded. You may close this window.</p>
-                  {lastSubmitStored && (
-                    <p className="mx-auto mt-4 max-w-lg text-left text-sm leading-relaxed text-[#495057]">
-                      <strong className="text-[#2c3e50]">Where your answers were saved:</strong>{" "}
-                      {storageFeedbackLine(lastSubmitStored)}
-                    </p>
-                  )}
                   <Link
                     href="/"
                     className="mt-6 inline-block text-sm font-medium text-[#138496] underline decoration-[#17a2b8] underline-offset-2 hover:text-[#117a8b]"
@@ -864,8 +835,11 @@ function InnerSurvey() {
                     {tab === "faq" && (
                       <>
                         <h3 className="text-sm font-semibold text-[#2c3e50]">SmartFAQs</h3>
-                        <div className="note-panel-faq prose prose-sm prose-slate mt-3 max-w-none prose-headings:text-[#2c3e50] prose-p:text-[#212529]">
-                          <ReactMarkdown>{note.faqs}</ReactMarkdown>
+                        <p className="mt-1 text-xs text-[#6c757d]">
+                          Tap a question to expand the answer.
+                        </p>
+                        <div className="mt-3">
+                          <SmartFaqAccordion faqs={note.faqs} />
                         </div>
                       </>
                     )}
