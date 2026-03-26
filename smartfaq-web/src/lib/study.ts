@@ -1,11 +1,10 @@
 /** Study configuration — real note data from CSV (auto-generated). */
 
 export const FORMS: Record<string, string[]> = {
-  "1": ["NOTE_001", "NOTE_002", "NOTE_003", "NOTE_004", "NOTE_005"],
-  "2": ["NOTE_006", "NOTE_007", "NOTE_008", "NOTE_009", "NOTE_010"],
-  "3": ["NOTE_011", "NOTE_012", "NOTE_013", "NOTE_014", "NOTE_015"],
-  "4": ["NOTE_016", "NOTE_017", "NOTE_018", "NOTE_019", "NOTE_020"],
-  "5": ["NOTE_021", "NOTE_022", "NOTE_023", "NOTE_024"],
+  "1": ["NOTE_001", "NOTE_002", "NOTE_003", "NOTE_004", "NOTE_005", "NOTE_006"],
+  "2": ["NOTE_007", "NOTE_008", "NOTE_009", "NOTE_010", "NOTE_011", "NOTE_012"],
+  "3": ["NOTE_013", "NOTE_014", "NOTE_015", "NOTE_016", "NOTE_017", "NOTE_018"],
+  "4": ["NOTE_019", "NOTE_020", "NOTE_021", "NOTE_022", "NOTE_023", "NOTE_024"],
 };
 
 export const DEFAULT_FORM = "1";
